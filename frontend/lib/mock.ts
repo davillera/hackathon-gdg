@@ -18,23 +18,22 @@ interface Seed {
   base: number; // consumo diario promedio
   trend: number; // variación diaria relativa
   cover: number; // días de cobertura del stock actual
-  lead: number; // lead time en días
 }
 
 // Catálogo y escenarios de docs/data_spec.md (los id_insumo están congelados).
 const SEEDS: Seed[] = [
-  { id: "ELECTRODO_6013", nombre: "Electrodo 6013", unidad: "kg", base: 45, trend: 0.15 / 365, cover: 11, lead: 7 },
-  { id: "ELECTRODO_7018", nombre: "Electrodo 7018", unidad: "kg", base: 30, trend: 0.1 / 365, cover: 30, lead: 7 },
-  { id: "ACERO_A36", nombre: "Acero A36", unidad: "kg", base: 850, trend: 0.2 / 365, cover: 4, lead: 7 },
-  { id: "ACERO_INOX_304", nombre: "Acero Inox 304", unidad: "kg", base: 120, trend: 0.05 / 365, cover: 45, lead: 10 },
-  { id: "ALAMBRE_MIG_ER70S6", nombre: "Alambre MIG ER70S-6", unidad: "kg", base: 55, trend: 0.12 / 365, cover: 25, lead: 7 },
-  { id: "DISCO_CORTE_7", nombre: "Disco de corte 7\"", unidad: "unidades", base: 70, trend: 0.08 / 365, cover: 3, lead: 5 },
-  { id: "DISCO_DESBASTE_7", nombre: "Disco de desbaste 7\"", unidad: "unidades", base: 40, trend: 0.08 / 365, cover: 40, lead: 5 },
-  { id: "GAS_ARGON", nombre: "Gas argón", unidad: "m3", base: 25, trend: 0, cover: 5, lead: 10 },
-  { id: "GAS_CO2", nombre: "Gas CO2", unidad: "m3", base: 35, trend: 0.05 / 365, cover: 35, lead: 10 },
-  { id: "PINTURA_ANTICORROSIVA", nombre: "Pintura anticorrosiva", unidad: "galones", base: 18, trend: -0.1 / 365, cover: 12, lead: 7 },
-  { id: "TORNILLO_M10", nombre: "Tornillo M10", unidad: "unidades", base: 400, trend: 0.05 / 365, cover: 10, lead: 5 },
-  { id: "GUANTES_SOLDADOR", nombre: "Guantes de soldador", unidad: "pares", base: 12, trend: 0, cover: 60, lead: 5 },
+  { id: "ELECTRODO_6013", nombre: "Electrodo 6013", unidad: "kg", base: 45, trend: 0.15 / 365, cover: 11 },
+  { id: "ELECTRODO_7018", nombre: "Electrodo 7018", unidad: "kg", base: 30, trend: 0.1 / 365, cover: 30 },
+  { id: "ACERO_A36", nombre: "Acero A36", unidad: "kg", base: 850, trend: 0.2 / 365, cover: 4 },
+  { id: "ACERO_INOX_304", nombre: "Acero Inox 304", unidad: "kg", base: 120, trend: 0.05 / 365, cover: 45 },
+  { id: "ALAMBRE_MIG_ER70S6", nombre: "Alambre MIG ER70S-6", unidad: "kg", base: 55, trend: 0.12 / 365, cover: 25 },
+  { id: "DISCO_CORTE_7", nombre: "Disco de corte 7\"", unidad: "unidades", base: 70, trend: 0.08 / 365, cover: 3 },
+  { id: "DISCO_DESBASTE_7", nombre: "Disco de desbaste 7\"", unidad: "unidades", base: 40, trend: 0.08 / 365, cover: 40 },
+  { id: "GAS_ARGON", nombre: "Gas argón", unidad: "m3", base: 25, trend: 0, cover: 5 },
+  { id: "GAS_CO2", nombre: "Gas CO2", unidad: "m3", base: 35, trend: 0.05 / 365, cover: 35 },
+  { id: "PINTURA_ANTICORROSIVA", nombre: "Pintura anticorrosiva", unidad: "galones", base: 18, trend: -0.1 / 365, cover: 12 },
+  { id: "TORNILLO_M10", nombre: "Tornillo M10", unidad: "unidades", base: 400, trend: 0.05 / 365, cover: 10 },
+  { id: "GUANTES_SOLDADOR", nombre: "Guantes de soldador", unidad: "pares", base: 12, trend: 0, cover: 60 },
 ];
 
 const HISTORY_DAYS = 120;
@@ -129,11 +128,9 @@ function daysLeft(seed: Seed): number {
 }
 
 function estadoDe(seed: Seed): Estado {
+  // Misma regla que la API: se agota en 7 días o menos es crítico, hasta 14 advertencia.
   const dias = daysLeft(seed);
-  const f7 = buildForecast(seed).forecast.slice(0, 7).reduce((t, p) => t + p.predicted_consumption, 0);
-  if (dias <= seed.lead || stockFor(seed) < f7) return "Crítico";
-  if (dias <= seed.lead + 7) return "Advertencia";
-  return "OK";
+  return dias <= 7 ? "Crítico" : dias <= 14 ? "Advertencia" : "Estable";
 }
 
 export function mockCurrent(): InsumoActual[] {
@@ -144,8 +141,6 @@ export function mockCurrent(): InsumoActual[] {
       nombre: s.nombre,
       unidad: s.unidad,
       stock_actual: stockFor(s),
-      punto_reorden: Math.round(avg * (s.lead + 7)),
-      lead_time_dias: s.lead,
       consumo_diario_prom: Math.round(avg * 10) / 10,
       dias_cobertura: daysLeft(s),
       estado: estadoDe(s),
@@ -157,7 +152,7 @@ export function mockAlerts(): Alerta[] {
   const alerts: Alerta[] = [];
   for (const s of SEEDS) {
     const estado = estadoDe(s);
-    if (estado === "OK") continue;
+    if (estado === "Estable") continue;
     const dias = daysLeft(s);
     alerts.push({
       id_insumo: s.id,
@@ -188,7 +183,7 @@ export function mockCreateOrder(id: string): PurchaseOrder {
     id_insumo: seed.id,
     nombre: seed.nombre,
     unidad: seed.unidad,
-    cantidad_sugerida: Math.max(0, Math.round(avgForecast(seed) * (seed.lead + HORIZON_DAYS) - stockFor(seed))),
+    cantidad_sugerida: Math.max(0, Math.round(avgForecast(seed) * (HORIZON_DAYS + 7) - stockFor(seed))),
     creada_en: new Date().toISOString(),
     estado: "Emitida",
   };

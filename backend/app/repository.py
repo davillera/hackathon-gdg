@@ -52,24 +52,23 @@ class CatalogItem:
     amp: float  # amplitud estacional anual
     cv: float  # coeficiente de variación del ruido
     integer: bool
-    cover: int  # días de cobertura del stock actual
-    lead: int  # lead time en días
+    cover: int  # días de cobertura del stock actual (escenario de demo)
 
 
 # Catálogo y escenarios de demo de docs/data_spec.md (los id_insumo están congelados).
 CATALOG = [
-    CatalogItem("ELECTRODO_6013", "Electrodo 6013", "kg", 45, 0.15, 0.15, 0.20, False, 11, 7),
-    CatalogItem("ELECTRODO_7018", "Electrodo 7018", "kg", 30, 0.10, 0.15, 0.25, False, 30, 7),
-    CatalogItem("ACERO_A36", "Acero A36", "kg", 850, 0.20, 0.20, 0.30, False, 4, 7),
-    CatalogItem("ACERO_INOX_304", "Acero Inox 304", "kg", 120, 0.05, 0.10, 0.35, False, 45, 10),
-    CatalogItem("ALAMBRE_MIG_ER70S6", "Alambre MIG ER70S-6", "kg", 55, 0.12, 0.15, 0.20, False, 25, 7),
-    CatalogItem("DISCO_CORTE_7", 'Disco de corte 7"', "unidades", 70, 0.08, 0.10, 0.20, True, 3, 5),
-    CatalogItem("DISCO_DESBASTE_7", 'Disco de desbaste 7"', "unidades", 40, 0.08, 0.10, 0.25, True, 40, 5),
-    CatalogItem("GAS_ARGON", "Gas argón", "m3", 25, 0.0, 0.05, 0.15, False, 5, 10),
-    CatalogItem("GAS_CO2", "Gas CO2", "m3", 35, 0.05, 0.05, 0.15, False, 35, 10),
-    CatalogItem("PINTURA_ANTICORROSIVA", "Pintura anticorrosiva", "galones", 18, -0.10, 0.30, 0.40, False, 12, 7),
-    CatalogItem("TORNILLO_M10", "Tornillo M10", "unidades", 400, 0.05, 0.10, 0.45, True, 10, 5),
-    CatalogItem("GUANTES_SOLDADOR", "Guantes de soldador", "pares", 12, 0.0, 0.05, 0.50, True, 60, 5),
+    CatalogItem("ELECTRODO_6013", "Electrodo 6013", "kg", 45, 0.15, 0.15, 0.20, False, 11),
+    CatalogItem("ELECTRODO_7018", "Electrodo 7018", "kg", 30, 0.10, 0.15, 0.25, False, 30),
+    CatalogItem("ACERO_A36", "Acero A36", "kg", 850, 0.20, 0.20, 0.30, False, 4),
+    CatalogItem("ACERO_INOX_304", "Acero Inox 304", "kg", 120, 0.05, 0.10, 0.35, False, 45),
+    CatalogItem("ALAMBRE_MIG_ER70S6", "Alambre MIG ER70S-6", "kg", 55, 0.12, 0.15, 0.20, False, 25),
+    CatalogItem("DISCO_CORTE_7", 'Disco de corte 7"', "unidades", 70, 0.08, 0.10, 0.20, True, 3),
+    CatalogItem("DISCO_DESBASTE_7", 'Disco de desbaste 7"', "unidades", 40, 0.08, 0.10, 0.25, True, 40),
+    CatalogItem("GAS_ARGON", "Gas argón", "m3", 25, 0.0, 0.05, 0.15, False, 5),
+    CatalogItem("GAS_CO2", "Gas CO2", "m3", 35, 0.05, 0.05, 0.15, False, 35),
+    CatalogItem("PINTURA_ANTICORROSIVA", "Pintura anticorrosiva", "galones", 18, -0.10, 0.30, 0.40, False, 12),
+    CatalogItem("TORNILLO_M10", "Tornillo M10", "unidades", 400, 0.05, 0.10, 0.45, True, 10),
+    CatalogItem("GUANTES_SOLDADOR", "Guantes de soldador", "pares", 12, 0.0, 0.05, 0.50, True, 60),
 ]
 
 WEEKLY = [1.00, 1.05, 1.05, 1.00, 0.90, 0.45, 0.05]  # lun..dom
@@ -137,60 +136,54 @@ class MockRepository:
     def _stock(self, item: CatalogItem) -> float:
         return _round(item, self._avg_28d(item) * item.cover)
 
-    def _days_left(self, item: CatalogItem, forecast: list[ForecastPoint]) -> float:
+    def _days_left(self, item: CatalogItem, forecast: list[ForecastPoint]) -> int | None:
+        """Primer día del pronóstico en que el consumo acumulado supera el stock; None si no ocurre en 30 días."""
         stock = self._stock(item)
         acc = 0.0
         for i, p in enumerate(forecast):
-            nxt = acc + p.predicted_consumption
-            if nxt >= stock:
-                return float(math.floor(i + (stock - acc) / p.predicted_consumption))
-            acc = nxt
-        avg = acc / len(forecast)
-        return float(round(stock / avg))
+            acc += p.predicted_consumption
+            if acc > stock:
+                return i + 1
+        return None
 
-    def _estado(self, item: CatalogItem) -> tuple[str, float, list[ForecastPoint]]:
-        fc = self._build_forecast(item)
-        dias = self._days_left(item, fc)
-        f7 = sum(p.predicted_consumption for p in fc[:7])
-        return classify(dias, item.lead, self._stock(item), f7), dias, fc
-
-    def current(self) -> list[InsumoActual]:
+    def _rows(self) -> list[tuple[CatalogItem, float, float, int | None, str]]:
+        """(item, stock, consumo_diario_prom, dias_restantes, estado) por insumo."""
         out = []
         for c in CATALOG:
-            estado, dias, _ = self._estado(c)
-            avg = self._avg_28d(c)
-            out.append(
-                InsumoActual(
-                    id_insumo=c.id,
-                    nombre=c.nombre,
-                    unidad=c.unidad,
-                    stock_actual=self._stock(c),
-                    punto_reorden=_round(c, avg * (c.lead + 7)),
-                    lead_time_dias=c.lead,
-                    consumo_diario_prom=avg,
-                    dias_cobertura=dias,
-                    estado=estado,  # type: ignore[arg-type]
-                )
-            )
+            fc = self._build_forecast(c)
+            avg = sum(p.predicted_consumption for p in fc) / len(fc)
+            dias = self._days_left(c, fc)
+            out.append((c, self._stock(c), avg, dias, classify(dias)))
         return out
 
-    def alerts(self) -> list[Alerta]:
-        out = []
-        for c in CATALOG:
-            estado, dias, _ = self._estado(c)
-            if estado == "OK":
-                continue
-            out.append(
-                Alerta(
-                    id_insumo=c.id,
-                    nombre=c.nombre,
-                    unidad=c.unidad,
-                    estado=estado,  # type: ignore[arg-type]
-                    stock_actual=self._stock(c),
-                    dias_restantes=dias,
-                    fecha_agotamiento=(AS_OF + timedelta(days=dias)).isoformat(),
-                )
+    def current(self) -> list[InsumoActual]:
+        return [
+            InsumoActual(
+                id_insumo=c.id,
+                nombre=c.nombre,
+                unidad=c.unidad,
+                stock_actual=stock,
+                consumo_diario_prom=round(avg, 2),
+                dias_cobertura=round(stock / avg, 1),
+                estado=estado,  # type: ignore[arg-type]
             )
+            for c, stock, avg, _, estado in self._rows()
+        ]
+
+    def alerts(self) -> list[Alerta]:
+        out = [
+            Alerta(
+                id_insumo=c.id,
+                nombre=c.nombre,
+                unidad=c.unidad,
+                estado=estado,  # type: ignore[arg-type]
+                stock_actual=stock,
+                dias_restantes=float(dias),
+                fecha_agotamiento=(AS_OF + timedelta(days=dias)).isoformat(),
+            )
+            for c, stock, _, dias, estado in self._rows()
+            if estado != "Estable" and dias is not None
+        ]
         return sorted(out, key=lambda a: a.dias_restantes)
 
     def forecast(self, item_id: str) -> ForecastResponse:
@@ -205,7 +198,7 @@ class MockRepository:
         return HistoryResponse(item=item.id, history=self._history[item.id])
 
     def metrics(self) -> ModelMetrics:
-        return ModelMetrics(modelo="ARIMA_PLUS (demo)", mape=8.6, precision=91.4, evaluado_en=AS_OF.isoformat())
+        return ModelMetrics(modelo="ARIMA_PLUS", mape=8.6, precision=91.4, evaluado_en=AS_OF.isoformat())
 
 
 # ---------------------------------------------------------------------- BigQuery
@@ -238,7 +231,7 @@ class BigQueryRepository:
 
         self._bq = bigquery
         self._client = bigquery.Client(project=project)
-        self._ref = f"`{project}.{dataset}`"
+        self._ref = f"{project}.{dataset}"
         self._cache = _TTLCache(cache_ttl)
 
     def _query(self, sql: str, **params: str) -> list[dict[str, Any]]:
@@ -248,53 +241,36 @@ class BigQueryRepository:
         return [dict(row) for row in self._client.query(sql, job_config=config).result()]
 
     def _assert_item(self, item_id: str) -> None:
-        rows = self._cache.get(
-            ("items",), lambda: self._query(f"SELECT id_insumo FROM {self._ref}.current_inventory")
-        )
+        rows = self._cache.get(("items",), lambda: self._query(f"SELECT id_insumo FROM `{self._ref}.v_current`"))
         if item_id not in {r["id_insumo"] for r in rows}:
             raise ItemNotFound(item_id)
 
     def current(self) -> list[InsumoActual]:
         sql = f"""
-            WITH consumo AS (
-              SELECT id_insumo, AVG(cantidad_consumida) AS consumo_diario_prom
-              FROM {self._ref}.historical_inventory
-              WHERE fecha > DATE_SUB((SELECT MAX(fecha) FROM {self._ref}.historical_inventory), INTERVAL 28 DAY)
-              GROUP BY id_insumo
-            )
-            SELECT c.id_insumo, c.nombre, c.unidad, c.stock_actual, c.punto_reorden, c.lead_time_dias,
-                   k.consumo_diario_prom,
-                   SAFE_DIVIDE(c.stock_actual, k.consumo_diario_prom) AS dias_cobertura,
-                   COALESCE(a.estado, 'OK') AS estado
-            FROM {self._ref}.current_inventory c
-            JOIN consumo k USING (id_insumo)
-            LEFT JOIN {self._ref}.v_alerts a USING (id_insumo)
-            ORDER BY c.id_insumo
+            SELECT id_insumo, nombre, unidad, stock_actual, consumo_diario_prom, dias_cobertura
+            FROM `{self._ref}.v_current`
+            ORDER BY id_insumo
         """
         rows = self._cache.get(("current",), lambda: self._query(sql))
+        estados = {a.id_insumo: a.estado for a in self.alerts()}  # v_alerts solo trae Crítico y Advertencia
         return [
             InsumoActual(
                 id_insumo=r["id_insumo"],
                 nombre=r["nombre"],
                 unidad=r["unidad"],
                 stock_actual=float(r["stock_actual"]),
-                punto_reorden=float(r["punto_reorden"]),
-                lead_time_dias=int(r["lead_time_dias"]),
                 consumo_diario_prom=round(float(r["consumo_diario_prom"]), 2),
-                dias_cobertura=round(float(r["dias_cobertura"] or 0), 1),
-                estado=r["estado"],
+                dias_cobertura=round(float(r["dias_cobertura"]), 1),
+                estado=estados.get(r["id_insumo"], "Estable"),
             )
             for r in rows
         ]
 
     def alerts(self) -> list[Alerta]:
         sql = f"""
-            SELECT a.id_insumo, c.nombre, c.unidad, a.estado, c.stock_actual,
-                   a.dias_restantes, a.fecha_agotamiento
-            FROM {self._ref}.v_alerts a
-            JOIN {self._ref}.current_inventory c USING (id_insumo)
-            WHERE a.estado IN ('Crítico', 'Advertencia')
-            ORDER BY a.dias_restantes
+            SELECT id_insumo, nombre, unidad, estado, stock_actual, dias_restantes, fecha_agotamiento
+            FROM `{self._ref}.v_alerts`
+            ORDER BY fecha_agotamiento, id_insumo
         """
         rows = self._cache.get(("alerts",), lambda: self._query(sql))
         return [
@@ -308,6 +284,7 @@ class BigQueryRepository:
                 fecha_agotamiento=_iso(r["fecha_agotamiento"]),
             )
             for r in rows
+            if r["estado"] in ("Crítico", "Advertencia")
         ]
 
     @staticmethod
@@ -326,7 +303,7 @@ class BigQueryRepository:
         self._assert_item(item_id)
         sql = f"""
             SELECT date, predicted_consumption, lower_bound, upper_bound
-            FROM {self._ref}.forecast_30d
+            FROM `{self._ref}.forecast_30d`
             WHERE id_insumo = @item_id
             ORDER BY date
         """
@@ -336,7 +313,7 @@ class BigQueryRepository:
     def forecast_all(self) -> list[ForecastResponse]:
         sql = f"""
             SELECT id_insumo, date, predicted_consumption, lower_bound, upper_bound
-            FROM {self._ref}.forecast_30d
+            FROM `{self._ref}.forecast_30d`
             ORDER BY id_insumo, date
         """
         rows = self._cache.get(("forecast_all",), lambda: self._query(sql))
@@ -348,26 +325,26 @@ class BigQueryRepository:
     def history(self, item_id: str) -> HistoryResponse:
         self._assert_item(item_id)
         sql = f"""
-            SELECT fecha, cantidad_consumida
-            FROM {self._ref}.v_history_90d
+            SELECT date, consumption
+            FROM `{self._ref}.v_history_90d`
             WHERE id_insumo = @item_id
-            ORDER BY fecha
+            ORDER BY date
         """
         rows = self._cache.get(("history", item_id), lambda: self._query(sql, item_id=item_id))
         return HistoryResponse(
             item=item_id,
-            history=[HistoryPoint(date=_iso(r["fecha"]), consumption=float(r["cantidad_consumida"])) for r in rows],
+            history=[HistoryPoint(date=_iso(r["date"]), consumption=float(r["consumption"])) for r in rows],
         )
 
     def metrics(self) -> ModelMetrics:
-        sql = f"SELECT modelo, mape, precision_modelo, evaluado_en FROM {self._ref}.v_kpis LIMIT 1"
+        sql = f"SELECT modelo, mape, `precision`, evaluado_en FROM `{self._ref}.model_metrics` LIMIT 1"
         rows = self._cache.get(("metrics",), lambda: self._query(sql))
         if not rows:
-            raise ItemNotFound("v_kpis")
+            raise ItemNotFound("model_metrics")
         r = rows[0]
         return ModelMetrics(
             modelo=r["modelo"],
             mape=round(float(r["mape"]), 1),
-            precision=round(float(r["precision_modelo"]), 1),
+            precision=round(float(r["precision"]), 1),
             evaluado_en=_iso(r["evaluado_en"]),
         )

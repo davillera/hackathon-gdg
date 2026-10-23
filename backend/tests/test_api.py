@@ -1,9 +1,13 @@
+import re
+
 import pytest
 from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.main import create_app
-from app.repository import CATALOG, MockRepository
+from datetime import date
+
+from app.repository import CATALOG, BigQueryRepository, ItemNotFound, MockRepository, _TTLCache
 from app.rules import classify, suggested_quantity
 
 
@@ -27,7 +31,7 @@ def test_demo_scenarios_match_data_spec(client):
     for criticos in ("ACERO_A36", "DISCO_CORTE_7", "GAS_ARGON"):
         assert estados[criticos] == "Crítico"
     for ok in ("ELECTRODO_7018", "ACERO_INOX_304", "GAS_CO2", "GUANTES_SOLDADOR"):
-        assert estados[ok] == "OK"
+        assert estados[ok] == "Estable"
 
 
 def test_alerts_sorted_and_only_at_risk(client):
@@ -87,12 +91,80 @@ def test_cors_allows_configured_origin():
 
 
 def test_classify_rule():
-    assert classify(5, 7, 100, 50) == "Crítico"  # se agota antes de que llegue el pedido
-    assert classify(30, 7, 40, 50) == "Crítico"  # menos stock que 7 días de consumo
-    assert classify(12, 7, 100, 50) == "Advertencia"
-    assert classify(30, 7, 100, 50) == "OK"
+    assert classify(3) == "Crítico"
+    assert classify(7) == "Crítico"
+    assert classify(8) == "Advertencia"
+    assert classify(14) == "Advertencia"
+    assert classify(15) == "Estable"
+    assert classify(None) == "Estable"  # no se agota en 30 días
 
 
 def test_suggested_quantity_never_negative():
-    assert suggested_quantity(10, 7, 10_000) == 0
-    assert suggested_quantity(10, 7, 100) == 270
+    assert suggested_quantity(10, 10_000) == 0
+    assert suggested_quantity(10, 100) == 270  # 10 x 37 días - 100
+
+
+def test_current_matches_alerts(client):
+    current = {r["id_insumo"]: r for r in client.get("/api/inventory/current").json()}
+    for a in client.get("/api/alerts").json():
+        assert current[a["id_insumo"]]["estado"] == a["estado"]
+    assert all("lead_time_dias" not in r for r in current.values())
+
+
+# ---- BigQuery: se prueba el mapeo de filas con un cliente falso (no hay credenciales en CI)
+
+
+def fake_bq_repo(tables):
+    repo = object.__new__(BigQueryRepository)
+    repo._ref = "p.supply_chain"
+    repo._cache = _TTLCache(60)
+    calls = []
+
+    def query(sql, **params):
+        calls.append((sql, params))
+        for name, rows in tables.items():
+            if re.search(rf"\.{name}", sql):
+                return rows
+        raise AssertionError(f"consulta inesperada: {sql}")
+
+    repo._query = query
+    repo.calls = calls
+    return repo
+
+
+def bq_tables():
+    return {
+        "v_current": [
+            {"id_insumo": "A", "nombre": "Ac", "unidad": "kg", "stock_actual": 100, "consumo_diario_prom": 25.0, "dias_cobertura": 4.0},
+            {"id_insumo": "B", "nombre": "Bo", "unidad": "kg", "stock_actual": 900, "consumo_diario_prom": 30.0, "dias_cobertura": 30.0},
+        ],
+        "v_alerts": [
+            {"id_insumo": "A", "nombre": "Ac", "unidad": "kg", "estado": "Crítico", "stock_actual": 100, "dias_restantes": 4,
+             "fecha_agotamiento": date(2026, 11, 4)},
+        ],
+        "forecast_30d": [
+            {"id_insumo": "A", "date": date(2026, 11, 1), "predicted_consumption": 25.0, "lower_bound": 10.0, "upper_bound": 40.0},
+        ],
+        "v_history_90d": [{"date": date(2026, 10, 31), "consumption": 22.5}],
+        "model_metrics": [{"modelo": "ARIMA_PLUS", "mape": 8.6, "precision": 91.4, "evaluado_en": date(2026, 11, 2)}],
+    }
+
+
+def test_bigquery_repository_maps_serving_views():
+    repo = fake_bq_repo(bq_tables())
+    current = repo.current()
+    assert [(c.id_insumo, c.estado) for c in current] == [("A", "Crítico"), ("B", "Estable")]
+    alerts = repo.alerts()
+    assert alerts[0].fecha_agotamiento == "2026-11-04" and alerts[0].dias_restantes == 4.0
+    assert repo.forecast("A").forecast[0].date == "2026-11-01"
+    assert repo.history("A").history[0].consumption == 22.5
+    assert repo.metrics().precision == 91.4
+    with pytest.raises(ItemNotFound):
+        repo.history("ZZZ")
+
+
+def test_bigquery_repository_passes_item_id_as_parameter():
+    repo = fake_bq_repo(bq_tables())
+    repo.forecast("A")
+    sql, params = next(c for c in repo.calls if "forecast_30d" in c[0])
+    assert params == {"item_id": "A"} and "'A'" not in sql

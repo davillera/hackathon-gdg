@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-Estado = Literal["Crítico", "Advertencia", "OK"]
+Estado = Literal["Crítico", "Advertencia", "Estable"]
 
 
 class InsumoActual(BaseModel):
@@ -12,8 +12,6 @@ class InsumoActual(BaseModel):
     nombre: str
     unidad: str
     stock_actual: float
-    punto_reorden: float
-    lead_time_dias: int
     consumo_diario_prom: float
     dias_cobertura: float
     estado: Estado

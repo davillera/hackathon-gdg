@@ -111,14 +111,14 @@ def create_app(settings: Settings | None = None, repository: Repository | None =
         item = next((c for c in r.current() if c.id_insumo == body.id_insumo), None)
         if item is None:
             raise HTTPException(status_code=404, detail=f"No existe el insumo '{body.id_insumo}'.")
-        if item.estado == "OK":
+        if item.estado == "Estable":
             raise HTTPException(status_code=409, detail=f"{item.nombre} no está en riesgo; no hace falta ordenar.")
         order = PurchaseOrder(
             id=uuid.uuid4().hex[:8].upper(),
             id_insumo=item.id_insumo,
             nombre=item.nombre,
             unidad=item.unidad,
-            cantidad_sugerida=suggested_quantity(item.consumo_diario_prom, item.lead_time_dias, item.stock_actual),
+            cantidad_sugerida=suggested_quantity(item.consumo_diario_prom, item.stock_actual),
             creada_en=datetime.now(timezone.utc).isoformat(timespec="seconds"),
             estado="Emitida",
         )

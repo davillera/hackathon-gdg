@@ -26,32 +26,35 @@ Sin `BQ_PROJECT` la API responde con datos de demostración que siguen `docs/dat
 | Método | Ruta | Origen en BigQuery |
 |---|---|---|
 | `GET` | `/health` | n/a |
-| `GET` | `/api/inventory/current` | `current_inventory` + consumo de 28 días de `historical_inventory` + `v_alerts` |
+| `GET` | `/api/inventory/current` | `v_current` + estado desde `v_alerts` (lo que no está en `v_alerts` es `Estable`) |
 | `GET` | `/api/inventory/forecast` | `forecast_30d` |
 | `GET` | `/api/inventory/forecast/{item_id}` | `forecast_30d` |
 | `GET` | `/api/inventory/history/{item_id}` | `v_history_90d` |
-| `GET` | `/api/alerts` | `v_alerts` + `current_inventory` |
-| `GET` | `/api/model/metrics` | `v_kpis` |
+| `GET` | `/api/alerts` | `v_alerts` |
+| `GET` | `/api/model/metrics` | `model_metrics` |
 | `GET` / `POST` | `/api/purchase-orders` | En memoria (ver abajo) |
 
 Las consultas son parametrizadas y el `item_id` se valida contra `current_inventory` antes de usarse.
 
-## Columnas que espera de los objetos del Equipo 1
+## Contrato con el Equipo 1
 
-`sql/serving/README.md` no fija los nombres de columna de las vistas, así que el backend asume estos. **El Equipo 1 debe confirmarlos o avisar para cambiarlos aquí** (`app/repository.py`).
+El backend lee los objetos y columnas de `sql/serving/README.md` (sin renombrar nada) y `model_metrics` de `sql/ml/02_train_final.sql`:
 
 | Objeto | Columnas |
 |---|---|
-| `current_inventory` | `id_insumo`, `nombre`, `unidad`, `stock_actual`, `punto_reorden`, `lead_time_dias`, `fecha_corte` |
-| `historical_inventory` | `fecha`, `id_insumo`, `cantidad_consumida` |
+| `v_current` | `id_insumo`, `nombre`, `unidad`, `stock_actual`, `consumo_diario_prom`, `dias_cobertura` |
+| `v_alerts` | `id_insumo`, `nombre`, `unidad`, `estado` (`Crítico` o `Advertencia`), `stock_actual`, `dias_restantes`, `fecha_agotamiento` |
 | `forecast_30d` | `id_insumo`, `date`, `predicted_consumption`, `lower_bound`, `upper_bound` |
-| `v_history_90d` | `id_insumo`, `fecha`, `cantidad_consumida` |
-| `v_alerts` | `id_insumo`, `estado` (`Crítico`, `Advertencia`, `OK`), `dias_restantes`, `fecha_agotamiento` (una fila por insumo, incluidos los `OK` para que `/current` pueda mostrar su estado) |
-| `v_kpis` | `modelo`, `mape`, `precision_modelo`, `evaluado_en` |
+| `v_history_90d` | `id_insumo`, `date`, `consumption` |
+| `model_metrics` | `modelo`, `mape`, `precision`, `evaluado_en` (una fila) |
+
+`v_kpis` no se consulta: el frontend calcula los indicadores con `/current`, `/alerts` y `/model/metrics`.
+
+Estado: `Crítico` si se agota en 7 días o menos, `Advertencia` hasta 14, `Estable` si no (`app/rules.py` repite la regla para el modo demo). Las pruebas del mapeo con BigQuery usan un cliente falso; **falta correrlas contra el dataset real** cuando el Equipo 1 publique las vistas.
 
 ## Órdenes de compra
 
-`POST /api/purchase-orders` con `{"id_insumo": "ACERO_A36"}` crea una orden con la cantidad que cubre el lead time más 30 días de consumo. Rechaza insumos sin riesgo (409) y no duplica la orden de un insumo que ya tiene una.
+`POST /api/purchase-orders` con `{"id_insumo": "ACERO_A36"}` crea una orden con la cantidad que cubre 30 días de consumo más 7 de colchón, descontando el stock. Rechaza insumos sin riesgo (409) y no duplica la orden de un insumo que ya tiene una.
 
 Las órdenes **viven en memoria** y se pierden al reiniciar la instancia. La Service Account del backend solo tiene permisos de lectura en BigQuery, así que persistirlas requiere decidir un almacén de escritura (Firestore, por ejemplo). Queda pendiente.
 

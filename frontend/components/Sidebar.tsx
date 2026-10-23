@@ -9,7 +9,7 @@ const NAV = [
   { href: "#alertas", label: "Alertas" },
 ];
 
-const LEGEND: Estado[] = ["Crítico", "Advertencia", "OK"];
+const LEGEND: Estado[] = ["Crítico", "Advertencia", "Estable"];
 
 interface Props {
   demo: boolean;

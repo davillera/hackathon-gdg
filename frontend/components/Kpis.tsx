@@ -26,8 +26,8 @@ function Ficha({
 }) {
   return (
     <div className="overflow-hidden rounded-[3px] bg-surface shadow-[0_1px_2px_rgba(14,14,16,0.18)]">
-      <div className={`flex h-9 items-center justify-between px-3 ${swatch}`}>
-        <span className="num text-[12px] font-semibold uppercase tracking-[0.08em]">{ral}</span>
+      <div className={`flex h-9 items-center justify-between px-3 ${loading ? "bg-rule" : swatch}`}>
+        <span className="num text-[12px] font-semibold uppercase tracking-[0.08em]">{loading ? "" : ral}</span>
       </div>
       <div className="px-3 pb-3 pt-2.5">
         <p className="text-[13px] font-medium text-ink-2">{label}</p>
@@ -49,7 +49,7 @@ export function Kpis({ current, alerts, metrics, loading }: Props) {
   const warn = atRisk - crit;
   const avgDays = total ? current!.reduce((s, c) => s + c.dias_cobertura, 0) / total : 0;
 
-  const riskState = crit > 0 ? STATUS["Crítico"] : atRisk > 0 ? STATUS.Advertencia : STATUS.OK;
+  const riskState = crit > 0 ? STATUS["Crítico"] : atRisk > 0 ? STATUS.Advertencia : STATUS.Estable;
   const daysState = STATUS[estadoPorDias(avgDays)];
 
   return (
