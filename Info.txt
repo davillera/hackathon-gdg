@@ -1,0 +1,105 @@
+Arquitectura del Proyecto
+Base de Datos y Machine Learning: BigQuery + BigQuery ML (Modelo ARIMA_PLUS para series temporales).
+
+Backend / API: FastAPI (Python) desplegado en Google Cloud Run.
+
+Frontend: Next.js (React) + Recharts/Tremor desplegado en Firebase Hosting o Cloud Run.
+
+Autenticación (Opcional): Firebase Auth.
+
+Fase 1: Datos y Entrenamiento del Modelo (BigQuery ML)
+El núcleo del proyecto es entrenar el modelo predictivo usando puro SQL sin sacar los datos de Google Cloud.
+
+Crear el Dataset en BigQuery:
+Ve a la consola de GCP y crea un dataset llamado supply_chain.
+
+Generar Datos Simulados (Mock Data):
+Para la hackathon, crea un script en Python que genere un CSV con 1-2 años de datos históricos de consumo diario y súbelo a una tabla historical_inventory.
+Columnas necesarias: fecha (DATE), id_insumo (STRING), cantidad_consumida (FLOAT).
+
+Entrenar el Modelo Predictivo:
+Ejecuta esta consulta en BigQuery para crear un modelo de series temporales que detecte estacionalidad y tendencias automáticamente:
+
+SQL
+CREATE OR REPLACE MODEL `supply_chain.inventory_forecast_model`
+OPTIONS(
+  model_type='ARIMA_PLUS',
+  time_series_timestamp_col='fecha',
+  time_series_data_col='cantidad_consumida',
+  time_series_id_col='id_insumo',
+  data_frequency='DAILY'
+) AS
+SELECT fecha, id_insumo, cantidad_consumida
+FROM `supply_chain.historical_inventory`;
+Generar la Predicción (Forecast):
+Una vez entrenado, usa ML.FORECAST para proyectar el consumo de los próximos 30 días:
+
+SQL
+SELECT *
+FROM ML.FORECAST(MODEL `supply_chain.inventory_forecast_model`, STRUCT(30 AS horizon));
+Fase 2: Desarrollo del Backend y API (FastAPI)
+El backend servirá de puente seguro entre tu frontend y BigQuery.
+
+Configurar el Entorno Python:
+Instala las dependencias clave: fastapi, uvicorn, google-cloud-bigquery, pandas.
+
+Crear los Endpoints Clave:
+
+GET /api/inventory/current: Consulta la tabla de inventario actual.
+
+GET /api/inventory/forecast: Ejecuta la consulta de ML.FORECAST usando el cliente de Python de BigQuery y devuelve un JSON formateado.
+
+GET /api/alerts: Compara el stock actual con el pronóstico de los próximos 7 días y devuelve un array con los insumos que están en riesgo de agotarse (estado "Crítico" o "Advertencia").
+
+Integrar el Cliente de BigQuery en Python:
+
+Python
+from google.cloud import bigquery
+from fastapi import FastAPI
+
+app = FastAPI()
+client = bigquery.Client()
+
+@app.get("/api/inventory/forecast/{item_id}")
+def get_forecast(item_id: str):
+    query = f"""
+        SELECT forecast_timestamp, forecast_value
+        FROM ML.FORECAST(MODEL `supply_chain.inventory_forecast_model`, STRUCT(30 AS horizon))
+        WHERE id_insumo = '{item_id}'
+    """
+    query_job = client.query(query)
+    results = [{"date": row.forecast_timestamp, "predicted_consumption": row.forecast_value} for row in query_job]
+    return {"item": item_id, "forecast": results}
+Fase 3: Desarrollo del Frontend (Next.js)
+El jurado evalúa fuertemente la UI/UX. El dashboard debe transmitir el valor del modelo de forma intuitiva.
+
+Configurar el Proyecto:
+Inicia un proyecto en Next.js. Usa TailwindCSS para estilos rápidos y una librería como Recharts o Tremor.so (excelente para dashboards de analítica).
+
+Construir las Vistas Principales:
+
+Tarjetas de KPIs (Arriba): "Insumos en Riesgo de Quiebre", "Días de Inventario Promedio", "Precisión del Modelo".
+
+Gráfico Principal (Centro): Un gráfico de líneas combinadas. Una línea sólida para el consumo histórico de un material (ej. Electrodos 6013) y una línea punteada (con área de intervalo de confianza) para la predicción de los próximos 30 días obtenida de la API.
+
+Tabla de Alertas (Abajo): Lista de insumos ordenados por la fecha proyectada de agotamiento (ej. "Acero A36 - Se agotará en 4 días - [Botón: Emitir Orden de Compra]").
+
+Conexión Frontend-Backend:
+Usa fetch o axios en el frontend para consumir tu API en FastAPI y renderizar los estados de carga mientras BigQuery procesa.
+
+Fase 4: Despliegue en Google Cloud (Serverless)
+Para la hackathon, demuestra que sabes usar la infraestructura moderna y escalable de GCP.
+
+Desplegar el Backend en Cloud Run:
+
+Crea un Dockerfile simple para tu API en FastAPI.
+
+Sube la imagen a Artifact Registry y despliégala en Cloud Run. Asegúrate de asignarle la Service Account que tenga permisos de BigQuery Data Viewer y BigQuery Job User.
+
+Desplegar el Frontend en Firebase Hosting:
+
+Ejecuta npm run build.
+
+Usa el Firebase CLI (firebase deploy --only hosting) para tener una URL pública (y SSL gratuito) al instante para tu presentación.
+
+El diferencial de este proyecto es que resuelve un problema industrial clásico, aprovecha una base de datos analítica masiva (BigQuery) y despliega Machine Learning con apenas unas líneas de código, sin tener que exportar datos a PyTorch o TensorFlow.
