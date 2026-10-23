@@ -16,6 +16,20 @@ BigQuery (ARIMA_PLUS)  →  FastAPI (Cloud Run)  →  Next.js (Firebase Hosting)
       Equipo 1                        Equipo 2
 ```
 
+## Estructura del repositorio (Equipo 1)
+
+| Carpeta | Responsable | Contenido |
+|---|---|---|
+| `data/` | Persona B | Generador de datos sintéticos y CSV de salida |
+| `sql/schema/` | Persona B | DDL de `historical_inventory` y `current_inventory` |
+| `sql/ml/` | Equipo de ML | Entrenamiento, backtest, métricas y diagnóstico de `ARIMA_PLUS` |
+| `sql/serving/` | Persona A | Tablas y vistas que consulta el backend (`forecast_30d`, `v_alerts`, `v_kpis`) |
+| `infra/` | Persona A | Service Account y pruebas de acceso |
+| `notebooks/` | Equipo de ML | Exploración y gráficos para la presentación |
+| `docs/` | Compartido | `data_spec.md` (especificación de datos) y `data_contract.md` (contrato de tablas) |
+
+Cada carpeta tiene un `README.md` con el detalle de sus archivos.
+
 ## División en dos equipos
 
 ### Equipo 1: Datos y ML
