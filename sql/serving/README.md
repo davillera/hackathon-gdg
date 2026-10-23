@@ -23,4 +23,10 @@ La tabla `model_metrics` (`modelo`, `mape`, `precision`, `evaluado_en`, una sola
 - **`fecha_agotamiento`:** `fecha_corte + dias_restantes`.
 - **`estado`:** `Crítico` si `dias_restantes` ≤ 7, `Advertencia` si ≤ 14, `Estable` si no. Es la misma regla que `frontend/lib/status.ts`.
 
-`01_forecast_30d.sql` se vuelve a correr cada vez que el equipo de ML reentrena el modelo.
+## Orden de ejecución
+
+1. `sql/ml/02_train_final.sql` (equipo de ML): crea `inventory_forecast_model` y `model_metrics`.
+2. `01_forecast_30d.sql` a `05_kpis.sql`, en orden.
+3. `infra/test_access.sql`: todas las filas deben tener `filas > 0`.
+
+Las vistas se actualizan solas. `01_forecast_30d.sql` es una tabla y se vuelve a correr cada vez que el equipo de ML reentrena el modelo.

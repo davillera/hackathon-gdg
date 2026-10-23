@@ -10,16 +10,18 @@ Persona B (datos)  ──►  Equipo de ML (modelo + métricas)  ──►  Pers
 
 **Carpetas:** `infra/`, `sql/serving/`
 
+> **Nota del equipo de ML:** para no bloquear al Equipo 2, adelantamos todos los archivos de A: `infra/grant_team_access.sh`, `infra/service_account.sh`, `infra/test_access.sql` y `sql/serving/01` a `05`. Están escritos pero **sin probar contra BigQuery** (todavía no tenemos acceso al proyecto). A queda a cargo de revisarlos, correrlos y ajustarlos si algo falla; lo primero es correr `grant_team_access.sh` para darnos acceso.
+
 - [x] Crear el dataset `supply_chain`.
-- [ ] `infra/service_account.sh`: crear la Service Account del backend con los roles `BigQuery Data Viewer` y `BigQuery Job User`.
-- [ ] `infra/test_access.sql`: consulta de prueba con esa Service Account. **No subir llaves JSON al repo.**
-- [ ] `sql/serving/`: tablas y vistas con los nombres de columna exactos de `sql/serving/README.md`:
+- [ ] **Dar acceso al equipo de ML:** `./infra/grant_team_access.sh <project-id> <correo>` y pasarle el ID del proyecto.
+- [x] `infra/service_account.sh` escrito (lo adelantó el equipo de ML). Falta correrlo: `./infra/service_account.sh <project-id>`.
+- [x] `infra/test_access.sql` escrito. Falta correrlo al final. **No subir llaves JSON al repo.**
+- [x] `sql/serving/` escrito (lo adelantó el equipo de ML); falta correrlo en orden cuando esté el modelo. Tablas y vistas con los nombres de columna exactos de `sql/serving/README.md`:
   - `forecast_30d` (tabla materializada desde `ML.FORECAST`),
   - `v_history_90d`,
   - `v_current`,
   - `v_alerts` (Crítico ≤ 7 días, Advertencia ≤ 14 días),
   - `v_kpis`.
-- [ ] Probar las vistas con datos dummy mientras llega el modelo.
 - [ ] Cuando el equipo de ML entregue el modelo final: correr `01_forecast_30d.sql` y avisar al Equipo 2 (punto de sincronización 2 del README).
 
 ## Persona B: crear la base (tablas y datos)
