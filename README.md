@@ -28,7 +28,7 @@ BigQuery (ARIMA_PLUS)  →  FastAPI (Cloud Run)  →  Next.js (Firebase Hosting)
 | `notebooks/` | Equipo de ML | Exploración y gráficos para la presentación |
 | `docs/` | Compartido | `data_spec.md` (especificación de datos) y `data_contract.md` (contrato de tablas) |
 
-Cada carpeta tiene un `README.md` con el detalle de sus archivos.
+Cada carpeta tiene un `README.md` con el detalle de sus archivos. Las tareas de cada persona están en [`docs/equipo1_responsabilidades.md`](docs/equipo1_responsabilidades.md).
 
 ## División en dos equipos
 
@@ -99,6 +99,10 @@ Lo implementa y consume el equipo 2. El equipo 1 define el esquema de las tablas
 | `GET` | `/api/inventory/current` | Stock actual por insumo. |
 | `GET` | `/api/inventory/forecast` | Pronóstico de 30 días para todos los insumos. |
 | `GET` | `/api/inventory/forecast/{item_id}` | Pronóstico de 30 días para un insumo. |
+| `GET` | `/api/inventory/history/{item_id}` | Consumo diario histórico de un insumo (`history: [{date, consumption}]`). Lo usa el gráfico principal. |
+| `GET` | `/api/model/metrics` | Métricas del modelo (`modelo`, `mape`, `precision`, `evaluado_en`). Alimenta la tarjeta "Precisión del Modelo". |
+| `GET` | `/api/purchase-orders` | Órdenes de compra emitidas. |
+| `POST` | `/api/purchase-orders` | Emite una orden para un insumo en riesgo (`{"id_insumo": "..."}`). Detalles en [`backend/README.md`](backend/README.md). |
 | `GET` | `/api/alerts` | Insumos en riesgo de agotarse según stock actual vs. pronóstico de 7 días. Estado `Crítico` o `Advertencia`. |
 
 Ejemplo de respuesta de `/api/inventory/forecast/{item_id}`:
@@ -120,3 +124,26 @@ Para el intervalo de confianza del gráfico, el backend debe agregar `lower_boun
 2. **Cuando el modelo esté entrenado:** el equipo 1 avisa, entrega la métrica de precisión y confirma el acceso de la Service Account.
 3. **Antes del despliegue:** el equipo 2 prueba la API contra datos reales y conecta el frontend a la URL de Cloud Run.
 4. **Antes de presentar:** ensayo conjunto del flujo completo con datos reales.
+
+## Frontend (`frontend/`)
+
+Next.js + TailwindCSS + Recharts, exportado como sitio estático para Firebase Hosting.
+
+```bash
+cd frontend
+npm install
+cp .env.example .env.local   # opcional
+npm run dev                  # http://localhost:3000
+npm run build                # genera frontend/out para Firebase Hosting
+```
+
+- Sin `NEXT_PUBLIC_API_URL` usa datos de demostración con la forma del contrato (etiquetados como tal en la barra lateral).
+- Sin variables `NEXT_PUBLIC_FIREBASE_*` omite el inicio de sesión; con ellas pide acceso con correo/contraseña o Google.
+- Una alerta es `Crítico` si el insumo se agota en 7 días o menos y `Advertencia` hasta 14 días. La API es la fuente de verdad; el frontend usa la misma regla solo para colorear insumos estables.
+- "Emitir orden de compra" solo marca la fila en pantalla; falta definir el endpoint de órdenes.
+
+## Backend (`backend/`)
+
+API en FastAPI. Sin `BQ_PROJECT` responde con datos de demostración que siguen `docs/data_spec.md`; con él lee de BigQuery. Cómo correrla, variables, columnas que espera de los objetos del Equipo 1 y despliegue en Cloud Run: [`backend/README.md`](backend/README.md).
+
+La regla de estado de los insumos (`Crítico`, `Advertencia`, `OK`) es la de `docs/data_spec.md`, sección 5: la calcula la vista `v_alerts` y el frontend solo la muestra.
