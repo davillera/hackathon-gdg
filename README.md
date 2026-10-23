@@ -157,3 +157,28 @@ Proyecto `prueba-gdg-512521`, dataset `supply_chain` (US). Estado actual:
 - `forecast_30d` y las vistas `v_current`, `v_history_90d`, `v_alerts`, `v_kpis`: creadas con `sql/serving/01` a `05`. El intervalo de confianza es de 90 %.
 
 Para usarlos en local: `GCP_PROJECT_ID` y `GOOGLE_APPLICATION_CREDENTIALS` en el `.env` (inicia sesión antes con `gcloud auth application-default login`). Cuando cambie el histórico o el stock hay que reentrenar (`02_train_final.sql`) y volver a correr `sql/serving/01_forecast_30d.sql`.
+
+## Despliegue en Cloud Run
+
+Región `us-central1`, proyecto `prueba-gdg-512521`. Imágenes en Artifact Registry (`inventario/api` y `inventario/web`).
+
+| Servicio | URL |
+|---|---|
+| `inventario-api` (FastAPI) | https://inventario-api-711193083059.us-central1.run.app |
+| `inventario-web` (Next.js estático con nginx) | https://inventario-web-711193083059.us-central1.run.app |
+
+Para volver a desplegar:
+
+```bash
+P=prueba-gdg-512521; R=us-central1
+# Backend
+gcloud builds submit backend --tag $R-docker.pkg.dev/$P/inventario/api
+gcloud run deploy inventario-api --image $R-docker.pkg.dev/$P/inventario/api --region $R --allow-unauthenticated \
+  --set-env-vars GCP_PROJECT_ID=$P,BQ_DATASET=supply_chain,CORS_ORIGINS=https://inventario-web-711193083059.$R.run.app
+# Frontend (NEXT_PUBLIC_* se escriben en el build)
+gcloud builds submit frontend --config frontend/cloudbuild.yaml \
+  --substitutions _IMAGE=$R-docker.pkg.dev/$P/inventario/web,_API_URL=https://inventario-api-711193083059.$R.run.app
+gcloud run deploy inventario-web --image $R-docker.pkg.dev/$P/inventario/web --region $R --allow-unauthenticated
+```
+
+El backend corre con la cuenta de servicio `inventory-api@prueba-gdg-512521.iam.gserviceaccount.com` (solo lectura en BigQuery, creada con `infra/service_account.sh`). Ambos servicios son públicos y la API no tiene autenticación.
