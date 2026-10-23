@@ -13,14 +13,14 @@ Dashboard que anticipa el agotamiento de insumos industriales (electrodos, acero
 
 ```
 BigQuery (ARIMA_PLUS)  →  FastAPI (Cloud Run)  →  Next.js (Firebase Hosting)
-      Equipo 1                  Equipo 1                    Equipo 2
+      Equipo 1                        Equipo 2
 ```
 
 ## División en dos equipos
 
-### Equipo 1: Datos, ML y Backend
+### Equipo 1: Datos y ML
 
-Responsable de todo lo que ocurre hasta que el JSON sale de la API.
+Responsable de todo lo que vive en BigQuery. Entrega tablas y un modelo listos para consultar.
 
 **Fase 1: Datos y entrenamiento (BigQuery ML)**
 - [ ] Crear el dataset `supply_chain` en la consola de GCP.
@@ -49,38 +49,36 @@ SELECT *
 FROM ML.FORECAST(MODEL `supply_chain.inventory_forecast_model`, STRUCT(30 AS horizon));
 ```
 
+- [ ] Evaluar el modelo (`ML.EVALUATE`) y entregar la métrica para la tarjeta "Precisión del Modelo".
+- [ ] Dar acceso de lectura al dataset a la Service Account del backend (`BigQuery Data Viewer` y `BigQuery Job User`).
+
+### Equipo 2: Backend, Frontend y UX
+
+Responsable de la API, el dashboard y la experiencia de usuario, que el jurado evalúa con más peso.
+
 **Fase 2: Backend y API (FastAPI)**
 - [ ] Entorno Python con `fastapi`, `uvicorn`, `google-cloud-bigquery`, `pandas`.
 - [ ] Implementar los endpoints del contrato (ver abajo).
 - [ ] Usar consultas parametrizadas de BigQuery (`QueryJobConfig` con `ScalarQueryParameter`) en lugar de interpolar `item_id` en el SQL.
 - [ ] Habilitar CORS para el dominio del frontend.
 
-**Fase 4 (parte backend): Despliegue**
-- [ ] `Dockerfile` simple para la API.
-- [ ] Subir la imagen a Artifact Registry y desplegar en Cloud Run.
-- [ ] Asignar a la Service Account los roles `BigQuery Data Viewer` y `BigQuery Job User`.
-
-### Equipo 2: Frontend y UX
-
-Responsable de la experiencia del dashboard, que el jurado evalúa con más peso.
-
-**Fase 3: Frontend (Next.js)**
+**Fase 3: Frontend y UX (Next.js)**
 - [ ] Proyecto Next.js con TailwindCSS y Recharts o Tremor.
 - [ ] **Tarjetas de KPIs (arriba):** "Insumos en Riesgo de Quiebre", "Días de Inventario Promedio", "Precisión del Modelo".
 - [ ] **Gráfico principal (centro):** línea sólida con el consumo histórico de un insumo (ej. Electrodos 6013) y línea punteada con área de intervalo de confianza para los próximos 30 días.
 - [ ] **Tabla de alertas (abajo):** insumos ordenados por fecha proyectada de agotamiento (ej. "Acero A36 - Se agotará en 4 días" con botón "Emitir Orden de Compra").
 - [ ] Consumir la API con `fetch` o `axios`, con estados de carga mientras BigQuery procesa, y estados de error.
-- [ ] Trabajar contra datos mock con la forma del contrato hasta que la API esté lista.
+- [ ] Trabajar contra datos mock con la forma del contrato hasta que las tablas y el modelo estén listos.
 - [ ] (Opcional) Firebase Auth.
 
-**Fase 4 (parte frontend): Despliegue**
-- [ ] `npm run build`.
-- [ ] `firebase deploy --only hosting` para obtener una URL pública con SSL.
-- [ ] Configurar la URL de la API de Cloud Run en una variable de entorno (`NEXT_PUBLIC_API_URL`).
+**Fase 4: Despliegue**
+- [ ] `Dockerfile` simple para la API, imagen en Artifact Registry y despliegue en Cloud Run con la Service Account de BigQuery.
+- [ ] Frontend: `npm run build` y `firebase deploy --only hosting` para obtener una URL pública con SSL.
+- [ ] Configurar la URL de la API de Cloud Run en `NEXT_PUBLIC_API_URL`.
 
 ## Contrato de la API (punto de integración)
 
-Ambos equipos deben acordar y respetar estos endpoints. Cualquier cambio de forma se avisa al otro equipo.
+Lo implementa y consume el equipo 2. El equipo 1 define el esquema de las tablas que lo alimentan, y cualquier cambio de columnas se avisa al otro equipo.
 
 | Método | Ruta | Descripción |
 |---|---|---|
@@ -100,11 +98,11 @@ Ejemplo de respuesta de `/api/inventory/forecast/{item_id}`:
 }
 ```
 
-Para el intervalo de confianza del gráfico, el backend debe agregar `lower_bound` y `upper_bound` a cada punto (`prediction_interval_lower_bound` y `prediction_interval_upper_bound` en `ML.FORECAST`). El equipo 1 define el resto de los campos (forma de `current` y `alerts`) y los publica aquí antes de que el equipo 2 los consuma.
+Para el intervalo de confianza del gráfico, el backend debe agregar `lower_bound` y `upper_bound` a cada punto (`prediction_interval_lower_bound` y `prediction_interval_upper_bound` en `ML.FORECAST`). El equipo 2 define la forma de `current` y `alerts`; el equipo 1 se asegura de que las tablas tengan las columnas necesarias.
 
 ## Puntos de sincronización
 
-1. **Al inicio:** cerrar el contrato de la API (campos y nombres de los insumos).
-2. **Cuando el modelo esté entrenado:** el equipo 1 comparte el listado real de `id_insumo` y un ejemplo de respuesta de cada endpoint.
-3. **Antes del despliegue:** el equipo 1 entrega la URL de Cloud Run y el equipo 2 la configura en el frontend.
+1. **Al inicio:** acordar el esquema de las tablas (`historical_inventory`, stock actual) y la lista de `id_insumo`.
+2. **Cuando el modelo esté entrenado:** el equipo 1 avisa, entrega la métrica de precisión y confirma el acceso de la Service Account.
+3. **Antes del despliegue:** el equipo 2 prueba la API contra datos reales y conecta el frontend a la URL de Cloud Run.
 4. **Antes de presentar:** ensayo conjunto del flujo completo con datos reales.
