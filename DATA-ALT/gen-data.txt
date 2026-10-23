@@ -1,0 +1,162 @@
+import os
+import datetime
+import numpy as np
+import pandas as pd
+from google.cloud import bigquery
+
+# Parámetros del entorno
+PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "TU_PROJECT_ID_AQUI")
+DATASET_ID = "supply_chain"
+
+client = bigquery.Client(project=PROJECT_ID)
+
+# Catálogo industrial con perfiles operativos diferenciados
+CATALOG = [
+    {
+        "id_insumo": "ELECTRODO_6013",
+        "nombre": "Electrodo AWS E6013 1/8\"",
+        "categoria": "SOLDADURA",
+        "unidad": "kg",
+        "base_consumo": 45.0,
+        "stock_actual": 340.0,       # ~7 días (Advertencia)
+        "stock_minimo": 180.0,
+        "costo_unitario_usd": 4.20,
+        "lead_time_dias": 5,
+        "tendencia_anual": 0.05       # Crecimiento de demanda 5%
+    },
+    {
+        "id_insumo": "ACERO_A36_PLANCHA",
+        "nombre": "Plancha Estructural A36 6mm",
+        "categoria": "METALES",
+        "unidad": "unidades",
+        "base_consumo": 14.0,
+        "stock_actual": 38.0,        # ~2.7 días (Crítico / Quiebre inminente)
+        "stock_minimo": 45.0,
+        "costo_unitario_usd": 120.00,
+        "lead_time_dias": 7,
+        "tendencia_anual": -0.02
+    },
+    {
+        "id_insumo": "DISCO_CORTE_7",
+        "nombre": "Disco de Corte 7x1/16 Inox",
+        "categoria": "CONSUMIBLES",
+        "unidad": "unidades",
+        "base_consumo": 85.0,
+        "stock_actual": 1400.0,      # ~16 días (Saludable)
+        "stock_minimo": 400.0,
+        "costo_unitario_usd": 2.10,
+        "lead_time_dias": 3,
+        "tendencia_anual": 0.08
+    },
+    {
+        "id_insumo": "GAS_ARGON_M3",
+        "nombre": "Gas Argón Grado Industrial 99.9%",
+        "categoria": "GASES",
+        "unidad": "m3",
+        "base_consumo": 30.0,
+        "stock_actual": 85.0,        # ~2.8 días (Crítico)
+        "stock_minimo": 70.0,
+        "costo_unitario_usd": 18.50,
+        "lead_time_dias": 4,
+        "tendencia_anual": 0.03
+    },
+    {
+        "id_insumo": "ALAMBRE_MIG_ER70S6",
+        "nombre": "Carrete Alambre MIG 0.9mm 15kg",
+        "categoria": "SOLDADURA",
+        "unidad": "bobinas",
+        "base_consumo": 20.0,
+        "stock_actual": 420.0,       # ~21 días (Saludable)
+        "stock_minimo": 100.0,
+        "costo_unitario_usd": 38.00,
+        "lead_time_dias": 6,
+        "tendencia_anual": 0.04
+    }
+]
+
+def generate_time_series(catalog, days=730):
+    np.random.seed(101)
+    end_date = datetime.date.today() - datetime.timedelta(days=1)
+    start_date = end_date - datetime.timedelta(days=days - 1)
+    date_range = pd.date_range(start=start_date, end=end_date, freq="D")
+    
+    historical_records = []
+
+    for item in catalog:
+        base = item["base_consumo"]
+        t_slope = item["tendencia_anual"] / 365.0
+
+        for idx, current_dt in enumerate(date_range):
+            weekday = current_dt.weekday() # 0 = Lunes, 6 = Domingo
+            
+            # 1. Multiplicadores por día de la semana (Producción industrial)
+            if weekday in [0, 1, 2, 3]:   # Lun - Jue: operación full
+                day_factor = 1.05 + np.random.uniform(-0.05, 0.05)
+            elif weekday == 4:            # Viernes: cierre de turno temprano
+                day_factor = 0.90 + np.random.uniform(-0.04, 0.04)
+            elif weekday == 5:            # Sábado: turno parcial de mantenimiento
+                day_factor = 0.35 + np.random.uniform(-0.03, 0.03)
+            else:                         # Domingo: planta cerrada
+                day_factor = 0.03 + np.random.uniform(0.00, 0.02)
+                
+            # 2. Multiplicadores mensuales (ej. picos de producción en Q3/Q4)
+            month = current_dt.month
+            month_factor = 1.0 + (0.12 * np.sin(2 * np.pi * (month - 3) / 12))
+            
+            # 3. Tendencia lineal acumulada
+            trend_factor = 1.0 + (t_slope * idx)
+            
+            # 4. Ruido gaussiano (~10% de dispersión)
+            noise = np.random.normal(0, base * 0.08)
+            
+            # 5. Choque de consumo puntual ocasional (evento de mantenimiento mayor cada ~60 días)
+            shock = (base * 0.8) if (np.random.rand() < 0.015 and weekday < 5) else 0.0
+
+            consumo = (base * day_factor * month_factor * trend_factor) + noise + shock
+            consumo_final = round(max(0.0, float(consumo)), 2)
+
+            historical_records.append({
+                "fecha": current_dt.date(),
+                "id_insumo": item["id_insumo"],
+                "cantidad_consumida": consumo_final,
+                "tipo_turno": "TOTAL",
+                "es_feriado": False
+            })
+
+    return pd.DataFrame(historical_records)
+
+def main():
+    print(f"Generando histórico sintético para {len(CATALOG)} insumos...")
+    df_hist = generate_time_series(CATALOG, days=730)
+    
+    df_curr = pd.DataFrame([
+        {
+            "id_insumo": it["id_insumo"],
+            "nombre": it["nombre"],
+            "categoria": it["categoria"],
+            "unidad": it["unidad"],
+            "stock_actual": float(it["stock_actual"]),
+            "stock_minimo": float(it["stock_minimo"]),
+            "costo_unitario_usd": float(it["costo_unitario_usd"]),
+            "lead_time_dias": int(it["lead_time_dias"]),
+            "ultima_actualizacion": datetime.datetime.now(datetime.timezone.utc)
+        }
+        for it in CATALOG
+    ])
+
+    # Carga a BigQuery
+    hist_table_id = f"{PROJECT_ID}.{DATASET_ID}.historical_inventory"
+    curr_table_id = f"{PROJECT_ID}.{DATASET_ID}.current_inventory"
+
+    job_cfg = bigquery.LoadJobConfig(write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE)
+
+    print(f"Cargando {len(df_hist)} registros en `{hist_table_id}`...")
+    client.load_table_from_dataframe(df_hist, hist_table_id, job_config=job_cfg).result()
+
+    print(f"Cargando {len(df_curr)} registros en `{curr_table_id}`...")
+    client.load_table_from_dataframe(df_curr, curr_table_id, job_config=job_cfg).result()
+
+    print("Carga completa y verificada.")
+
+if __name__ == "__main__":
+    main()

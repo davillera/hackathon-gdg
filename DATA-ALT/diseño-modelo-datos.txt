@@ -1,0 +1,37 @@
+-- 1. Crear dataset con ubicación explícita
+CREATE SCHEMA IF NOT EXISTS `supply_chain`
+OPTIONS (
+  location = 'US',
+  description = 'Dataset central para forecasting y monitoreo de inventario industrial'
+);
+
+-- 2. Tabla de histórico con particionado diario y clustering por insumo
+CREATE OR REPLACE TABLE `supply_chain.historical_inventory` (
+  fecha DATE NOT NULL,
+  id_insumo STRING NOT NULL,
+  cantidad_consumida FLOAT64 NOT NULL,
+  tipo_turno STRING,              -- 'DIURNO', 'NOCTURNO', 'TOTAL'
+  es_feriado BOOL
+)
+PARTITION BY fecha
+CLUSTER BY id_insumo
+OPTIONS (
+  description = 'Registro histórico diario de consumo de insumos por planta'
+);
+
+-- 3. Tabla de inventario actual (Stock maestro)
+CREATE OR REPLACE TABLE `supply_chain.current_inventory` (
+  id_insumo STRING NOT NULL,
+  nombre STRING NOT NULL,
+  categoria STRING NOT NULL,      -- 'SOLDADURA', 'METALES', 'CONSUMIBLES', 'GASES'
+  unidad STRING NOT NULL,         -- 'kg', 'unidades', 'm3', 'bobinas'
+  stock_actual FLOAT64 NOT NULL,
+  stock_minimo FLOAT64 NOT NULL,  -- Punto de reorden de seguridad
+  costo_unitario_usd FLOAT64,
+  lead_time_dias INT64,           -- Tiempo que tarda el proveedor en entregar
+  ultima_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP()
+)
+CLUSTER BY id_insumo
+OPTIONS (
+  description = 'Estado en tiempo real de almacén central'
+);

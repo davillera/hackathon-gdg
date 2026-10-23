@@ -132,11 +132,11 @@ Next.js + TailwindCSS + Recharts, exportado como sitio estático para Firebase H
 ```bash
 cd frontend
 npm install
-cp .env.example .env.local   # opcional
 npm run dev                  # http://localhost:3000
 npm run build                # genera frontend/out para Firebase Hosting
 ```
 
+- Las variables se leen del `.env` de la raíz (`cp .env.example .env`), compartido con el backend.
 - Sin `NEXT_PUBLIC_API_URL` usa datos de demostración con la forma del contrato (etiquetados como tal en la barra lateral).
 - Sin variables `NEXT_PUBLIC_FIREBASE_*` omite el inicio de sesión; con ellas pide acceso con correo/contraseña o Google.
 - Una alerta es `Crítico` si el insumo se agota en 7 días o menos y `Advertencia` hasta 14 días. La API es la fuente de verdad; el frontend usa la misma regla solo para colorear insumos estables.
@@ -144,6 +144,16 @@ npm run build                # genera frontend/out para Firebase Hosting
 
 ## Backend (`backend/`)
 
-API en FastAPI. Sin `BQ_PROJECT` responde con datos de demostración que siguen `docs/data_spec.md`; con él lee de BigQuery. Cómo correrla, variables, columnas que espera de los objetos del Equipo 1 y despliegue en Cloud Run: [`backend/README.md`](backend/README.md).
+API en FastAPI. Sin `GCP_PROJECT_ID` responde con datos de demostración que siguen `docs/data_spec.md`; con él lee de BigQuery. Cómo correrla, variables, columnas que espera de los objetos del Equipo 1 y despliegue en Cloud Run: [`backend/README.md`](backend/README.md).
 
 La regla de estado de los insumos (`Crítico`, `Advertencia`, `OK`) es la de `docs/data_spec.md`, sección 5: la calcula la vista `v_alerts` y el frontend solo la muestra.
+
+## Datos reales en BigQuery
+
+Proyecto `prueba-gdg-512521`, dataset `supply_chain` (US). Estado actual:
+
+- `historical_inventory` y `current_inventory`: cargadas con `DATA-ALT/gen-data.txt` (5 insumos, 730 días; esquema de `DATA-ALT/diseño-modelo-datos.txt`).
+- Modelo `inventory_forecast_model` y `model_metrics`: entrenados con `sql/ml/00_setup.sql` y `sql/ml/02_train_final.sql` (precisión 92,2 %).
+- `forecast_30d` y las vistas `v_current`, `v_history_90d`, `v_alerts`, `v_kpis`: creadas con `sql/serving/01` a `05`. El intervalo de confianza es de 90 %.
+
+Para usarlos en local: `GCP_PROJECT_ID` y `GOOGLE_APPLICATION_CREDENTIALS` en el `.env` (inicia sesión antes con `gcloud auth application-default login`). Cuando cambie el histórico o el stock hay que reentrenar (`02_train_final.sql`) y volver a correr `sql/serving/01_forecast_30d.sql`.
