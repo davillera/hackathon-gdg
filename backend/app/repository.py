@@ -123,8 +123,8 @@ class MockRepository:
                 ForecastPoint(
                     date=d.isoformat(),
                     predicted_consumption=round(pred, 2),
-                    lower_bound=round(max(0.0, pred - 1.96 * sigma), 2),
-                    upper_bound=round(pred + 1.96 * sigma, 2),
+                    lower_bound=round(max(0.0, pred - 1.645 * sigma), 2),
+                    upper_bound=round(pred + 1.645 * sigma, 2),
                 )
             )
         return points

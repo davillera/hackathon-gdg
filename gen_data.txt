@@ -1,0 +1,116 @@
+1. Script en Python: Generación de datos y carga a BigQuery
+Este script genera 2 años de consumo diario para múltiples insumos, crea la tabla del stock actual y sube ambas directamente a tu dataset en GCP (también guarda copias locales en CSV).
+
+Requiere instalar dependencias: pip install pandas numpy google-cloud-bigquery db-dtypes
+
+Python
+import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta
+from google.cloud import bigquery
+import os
+
+# ---------------------------------------------------------
+# CONFIGURACIÓN GCP
+# ---------------------------------------------------------
+# Define tu ID de proyecto de Google Cloud
+PROJECT_ID = 'tu-project-id-aqui'
+DATASET_ID = 'supply_chain'
+
+# Configura la variable de entorno con tus credenciales si no estás en un entorno de GCP
+# os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "ruta/a/tu/archivo-credenciales.json"
+
+client = bigquery.Client(project=PROJECT_ID)
+
+# ---------------------------------------------------------
+# GENERACIÓN DE DATOS SINTÉTICOS
+# ---------------------------------------------------------
+np.random.seed(42)
+
+id_insumos = [f"INS-{i:03d}" for i in range(1, 11)] # 10 insumos diferentes
+dias_historia = 730 # 2 años de datos
+fecha_inicio = datetime.now() - timedelta(days=dias_historia)
+fechas = [fecha_inicio.date() + timedelta(days=i) for i in range(dias_historia)]
+
+# 1. Datos de historical_inventory (Serie de tiempo para BQML)
+hist_data = []
+for insumo in id_insumos:
+    # Simular una demanda base diferente para cada insumo
+    demanda_base = np.random.uniform(10.0, 100.0)
+    for fecha in fechas:
+        # Añadir ruido aleatorio simulando variabilidad diaria
+        consumo = max(0, np.random.normal(demanda_base, demanda_base * 0.2))
+        hist_data.append([fecha, insumo, round(consumo, 2)])
+
+df_historical = pd.DataFrame(hist_data, columns=['fecha', 'id_insumo', 'cantidad_consumida'])
+
+# 2. Datos de current_inventory (Para la API /api/inventory/current)
+curr_data = []
+for insumo in id_insumos:
+    stock_actual = np.random.randint(50, 1000)
+    curr_data.append([insumo, stock_actual])
+
+df_current = pd.DataFrame(curr_data, columns=['id_insumo', 'stock_actual'])
+
+# Guardar copias locales en CSV
+df_historical.to_csv('historical_inventory.csv', index=False)
+df_current.to_csv('current_inventory.csv', index=False)
+print("Archivos CSV generados localmente.")
+
+# ---------------------------------------------------------
+# CARGA A BIGQUERY
+# ---------------------------------------------------------
+def cargar_a_bigquery(df, table_name, schema):
+    table_id = f"{PROJECT_ID}.{DATASET_ID}.{table_name}"
+    job_config = bigquery.LoadJobConfig(
+        schema=schema,
+        write_disposition="WRITE_TRUNCATE", # Sobreescribe la tabla si existe
+    )
+    job = client.load_table_from_dataframe(df, table_id, job_config=job_config)
+    job.result()
+    print(f"Tabla {table_id} cargada con {job.output_rows} filas.")
+
+# Cargar historical_inventory
+schema_hist = [
+    bigquery.SchemaField("fecha", "DATE"),
+    bigquery.SchemaField("id_insumo", "STRING"),
+    bigquery.SchemaField("cantidad_consumida", "FLOAT"),
+]
+cargar_a_bigquery(df_historical, "historical_inventory", schema_hist)
+
+# Cargar current_inventory
+schema_curr = [
+    bigquery.SchemaField("id_insumo", "STRING"),
+    bigquery.SchemaField("stock_actual", "INTEGER"),
+]
+cargar_a_bigquery(df_current, "current_inventory", schema_curr)
+2. Entrenamiento del Modelo (BigQuery ML)
+Una vez que los datos estén en la tabla historical_inventory, ejecuta la siguiente consulta SQL directamente en la consola de BigQuery para crear y entrenar el modelo.
+
+Se utiliza el modelo ARIMA_PLUS, que es el estándar de BQML para pronósticos de series temporales (time series forecasting).
+
+SQL
+CREATE OR REPLACE MODEL `supply_chain.inventory_forecast_model`
+OPTIONS(
+  model_type = 'ARIMA_PLUS',
+  time_series_timestamp_col = 'fecha',
+  time_series_data_col = 'cantidad_consumida',
+  time_series_id_col = 'id_insumo',
+  data_frequency = 'DAILY',
+  horizon = 30  -- Proyecta a 30 días, ajustable según tus necesidades
+) AS
+SELECT 
+  fecha,
+  id_insumo,
+  cantidad_consumida
+FROM 
+  `supply_chain.historical_inventory`;
+3. Predicción (Prueba rápida del modelo)
+Para generar las predicciones que luego podrías cruzar con la tabla current_inventory en tu backend, utiliza ML.FORECAST:
+
+SQL
+SELECT
+  *
+FROM
+  ML.FORECAST(MODEL `supply_chain.inventory_forecast_model`,
+              STRUCT(15 AS horizon)); -- Predice los próximos 15 días

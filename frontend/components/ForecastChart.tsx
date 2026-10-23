@@ -150,7 +150,7 @@ export function ChartLegend({ unidad }: { unidad: string }) {
       </li>
       <li className="flex items-center gap-2">
         <span className="block h-3 w-7 bg-forecast/20" aria-hidden="true" />
-        Intervalo de confianza 95 %
+        Intervalo de confianza 90 %
       </li>
     </ul>
   );

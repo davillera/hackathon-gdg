@@ -99,8 +99,8 @@ function buildForecast(seed: Seed): ForecastResponse {
     return {
       date: iso(date),
       predicted_consumption: Math.round(predicted * 10) / 10,
-      lower_bound: Math.max(0, Math.round((predicted - 1.96 * sigma) * 10) / 10),
-      upper_bound: Math.round((predicted + 1.96 * sigma) * 10) / 10,
+      lower_bound: Math.max(0, Math.round((predicted - 1.645 * sigma) * 10) / 10),
+      upper_bound: Math.round((predicted + 1.645 * sigma) * 10) / 10,
     };
   });
   return { item: seed.id, forecast };

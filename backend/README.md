@@ -12,11 +12,13 @@ uvicorn app.main:app --reload --port 8000           # http://localhost:8000/docs
 pytest
 ```
 
-Sin `BQ_PROJECT` la API responde con datos de demostración que siguen `docs/data_spec.md` (mismos 12 `id_insumo`, mismos escenarios críticos/advertencia/OK). Con `BQ_PROJECT` consulta BigQuery usando las credenciales de la cuenta activa (`gcloud auth application-default login` en local, la Service Account en Cloud Run).
+Sin `GCP_PROJECT_ID` la API responde con datos de demostración que siguen `docs/data_spec.md` (mismos 12 `id_insumo`, mismos escenarios críticos/advertencia/OK). Con `GCP_PROJECT_ID` consulta BigQuery usando las credenciales de la cuenta activa (`gcloud auth application-default login` en local, la Service Account en Cloud Run).
+
+Las variables se leen del `.env` de la raíz del repo (plantilla: `.env.example`). Las del entorno tienen prioridad.
 
 | Variable | Descripción |
 |---|---|
-| `BQ_PROJECT` | Proyecto de GCP. Vacío = datos de demostración. |
+| `GCP_PROJECT_ID` | Proyecto de GCP. Vacío = datos de demostración. |
 | `BQ_DATASET` | Dataset, por defecto `supply_chain`. |
 | `CORS_ORIGINS` | Orígenes del frontend, separados por coma. |
 | `CACHE_TTL_SECONDS` | Cache en memoria de las consultas, por defecto 60. |
@@ -67,7 +69,7 @@ gcloud run deploy inventario-api \
   --image us-central1-docker.pkg.dev/$PROJECT/inventario/api \
   --region us-central1 \
   --service-account <service-account-del-backend> \
-  --set-env-vars BQ_PROJECT=$PROJECT,CORS_ORIGINS=https://<tu-sitio>.web.app \
+  --set-env-vars GCP_PROJECT_ID=$PROJECT,CORS_ORIGINS=https://<tu-sitio>.web.app \
   --allow-unauthenticated
 ```
 

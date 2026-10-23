@@ -18,11 +18,13 @@ agotamiento AS (
          c.nombre,
          c.unidad,
          c.stock_actual,
-         c.fecha_corte,
+         corte.fecha_corte,
          MIN(IF(a.consumo_acumulado > c.stock_actual, a.date, NULL)) AS fecha_agotamiento
   FROM `supply_chain.current_inventory` AS c
   JOIN acumulado AS a USING (id_insumo)
-  GROUP BY c.id_insumo, c.nombre, c.unidad, c.stock_actual, c.fecha_corte
+  -- current_inventory no tiene fecha_corte: es el último día del histórico.
+  CROSS JOIN (SELECT MAX(fecha) AS fecha_corte FROM `supply_chain.historical_inventory`) AS corte
+  GROUP BY c.id_insumo, c.nombre, c.unidad, c.stock_actual, corte.fecha_corte
 ),
 clasificado AS (
   SELECT *,
