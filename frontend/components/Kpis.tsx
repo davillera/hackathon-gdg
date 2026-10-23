@@ -49,7 +49,7 @@ export function Kpis({ current, alerts, metrics, loading }: Props) {
   const warn = atRisk - crit;
   const avgDays = total ? current!.reduce((s, c) => s + c.dias_cobertura, 0) / total : 0;
 
-  const riskState = crit > 0 ? STATUS["Crítico"] : atRisk > 0 ? STATUS.Advertencia : STATUS.Estable;
+  const riskState = crit > 0 ? STATUS["Crítico"] : atRisk > 0 ? STATUS.Advertencia : STATUS.OK;
   const daysState = STATUS[estadoPorDias(avgDays)];
 
   return (

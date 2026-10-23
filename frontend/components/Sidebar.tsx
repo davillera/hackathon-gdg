@@ -9,7 +9,7 @@ const NAV = [
   { href: "#alertas", label: "Alertas" },
 ];
 
-const LEGEND: Estado[] = ["Crítico", "Advertencia", "Estable"];
+const LEGEND: Estado[] = ["Crítico", "Advertencia", "OK"];
 
 interface Props {
   demo: boolean;
@@ -52,7 +52,7 @@ export function Sidebar({ demo, userLabel, onSignOut }: Props) {
           {LEGEND.map((e) => (
             <li key={e} className="flex items-center gap-2.5">
               <span className={`block size-3.5 rounded-[2px] ${STATUS[e].bg}`} aria-hidden="true" />
-              <span className="flex-1">{e}</span>
+              <span className="flex-1">{STATUS[e].label}</span>
               <span className="num text-rail-dim">{STATUS[e].ral}</span>
             </li>
           ))}

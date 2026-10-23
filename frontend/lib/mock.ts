@@ -3,10 +3,12 @@
 import {
   HORIZON_DAYS,
   type Alerta,
+  type Estado,
   type ForecastResponse,
   type HistoryResponse,
   type InsumoActual,
   type ModelMetrics,
+  type PurchaseOrder,
 } from "./types";
 
 interface Seed {
@@ -15,22 +17,28 @@ interface Seed {
   unidad: string;
   base: number; // consumo diario promedio
   trend: number; // variación diaria relativa
-  cover: number; // días de cobertura objetivo para el stock actual
+  cover: number; // días de cobertura del stock actual
+  lead: number; // lead time en días
 }
 
+// Catálogo y escenarios de docs/data_spec.md (los id_insumo están congelados).
 const SEEDS: Seed[] = [
-  { id: "ELECTRODO_6013", nombre: "Electrodos 6013", unidad: "kg", base: 42, trend: 0.0012, cover: 3.4 },
-  { id: "ACERO_A36", nombre: "Acero A36 (placa)", unidad: "kg", base: 310, trend: 0.0008, cover: 4.2 },
-  { id: "ALAMBRE_MIG", nombre: "Alambre MIG ER70S-6", unidad: "kg", base: 58, trend: 0.0004, cover: 6.4 },
-  { id: "DISCO_CORTE", nombre: "Disco de corte 7\"", unidad: "pzas", base: 36, trend: -0.0002, cover: 9.6 },
-  { id: "GAS_ARGON", nombre: "Gas argón", unidad: "m³", base: 24, trend: 0.0006, cover: 12.5 },
-  { id: "PINTURA_EPOXICA", nombre: "Pintura epóxica", unidad: "L", base: 18, trend: 0.0003, cover: 21 },
-  { id: "TORNILLO_M12", nombre: "Tornillo M12 x 50", unidad: "pzas", base: 220, trend: 0, cover: 28 },
-  { id: "LIJA_80", nombre: "Lija grano 80", unidad: "pzas", base: 64, trend: -0.0004, cover: 46 },
+  { id: "ELECTRODO_6013", nombre: "Electrodo 6013", unidad: "kg", base: 45, trend: 0.15 / 365, cover: 11, lead: 7 },
+  { id: "ELECTRODO_7018", nombre: "Electrodo 7018", unidad: "kg", base: 30, trend: 0.1 / 365, cover: 30, lead: 7 },
+  { id: "ACERO_A36", nombre: "Acero A36", unidad: "kg", base: 850, trend: 0.2 / 365, cover: 4, lead: 7 },
+  { id: "ACERO_INOX_304", nombre: "Acero Inox 304", unidad: "kg", base: 120, trend: 0.05 / 365, cover: 45, lead: 10 },
+  { id: "ALAMBRE_MIG_ER70S6", nombre: "Alambre MIG ER70S-6", unidad: "kg", base: 55, trend: 0.12 / 365, cover: 25, lead: 7 },
+  { id: "DISCO_CORTE_7", nombre: "Disco de corte 7\"", unidad: "unidades", base: 70, trend: 0.08 / 365, cover: 3, lead: 5 },
+  { id: "DISCO_DESBASTE_7", nombre: "Disco de desbaste 7\"", unidad: "unidades", base: 40, trend: 0.08 / 365, cover: 40, lead: 5 },
+  { id: "GAS_ARGON", nombre: "Gas argón", unidad: "m3", base: 25, trend: 0, cover: 5, lead: 10 },
+  { id: "GAS_CO2", nombre: "Gas CO2", unidad: "m3", base: 35, trend: 0.05 / 365, cover: 35, lead: 10 },
+  { id: "PINTURA_ANTICORROSIVA", nombre: "Pintura anticorrosiva", unidad: "galones", base: 18, trend: -0.1 / 365, cover: 12, lead: 7 },
+  { id: "TORNILLO_M10", nombre: "Tornillo M10", unidad: "unidades", base: 400, trend: 0.05 / 365, cover: 10, lead: 5 },
+  { id: "GUANTES_SOLDADOR", nombre: "Guantes de soldador", unidad: "pares", base: 12, trend: 0, cover: 60, lead: 5 },
 ];
 
 const HISTORY_DAYS = 120;
-const WEEKDAY = [0.45, 1.08, 1.12, 1.1, 1.06, 1.04, 0.8]; // dom..sáb
+const WEEKDAY = [0.05, 1.0, 1.05, 1.05, 1.0, 0.9, 0.45]; // dom..sáb
 
 function mulberry32(seed: number) {
   let a = seed;
@@ -120,6 +128,14 @@ function daysLeft(seed: Seed): number {
   return Math.round(stock / avgForecast(seed));
 }
 
+function estadoDe(seed: Seed): Estado {
+  const dias = daysLeft(seed);
+  const f7 = buildForecast(seed).forecast.slice(0, 7).reduce((t, p) => t + p.predicted_consumption, 0);
+  if (dias <= seed.lead || stockFor(seed) < f7) return "Crítico";
+  if (dias <= seed.lead + 7) return "Advertencia";
+  return "OK";
+}
+
 export function mockCurrent(): InsumoActual[] {
   return SEEDS.map((s) => {
     const avg = avgForecast(s);
@@ -128,8 +144,11 @@ export function mockCurrent(): InsumoActual[] {
       nombre: s.nombre,
       unidad: s.unidad,
       stock_actual: stockFor(s),
+      punto_reorden: Math.round(avg * (s.lead + 7)),
+      lead_time_dias: s.lead,
       consumo_diario_prom: Math.round(avg * 10) / 10,
       dias_cobertura: daysLeft(s),
+      estado: estadoDe(s),
     };
   });
 }
@@ -137,19 +156,44 @@ export function mockCurrent(): InsumoActual[] {
 export function mockAlerts(): Alerta[] {
   const alerts: Alerta[] = [];
   for (const s of SEEDS) {
+    const estado = estadoDe(s);
+    if (estado === "OK") continue;
     const dias = daysLeft(s);
-    if (dias > 14) continue;
     alerts.push({
       id_insumo: s.id,
       nombre: s.nombre,
       unidad: s.unidad,
-      estado: dias <= 7 ? "Crítico" : "Advertencia",
+      estado,
       stock_actual: stockFor(s),
       dias_restantes: dias,
       fecha_agotamiento: iso(addDays(today(), dias)),
     });
   }
   return alerts.sort((a, b) => a.dias_restantes - b.dias_restantes);
+}
+
+let demoOrders: PurchaseOrder[] = [];
+
+export function mockOrders(): PurchaseOrder[] {
+  return demoOrders;
+}
+
+export function mockCreateOrder(id: string): PurchaseOrder {
+  const existing = demoOrders.find((o) => o.id_insumo === id);
+  if (existing) return existing;
+  const seed = SEEDS.find((s) => s.id === id);
+  if (!seed) throw new Error(`No existe el insumo '${id}'.`);
+  const order: PurchaseOrder = {
+    id: Math.random().toString(16).slice(2, 10).toUpperCase(),
+    id_insumo: seed.id,
+    nombre: seed.nombre,
+    unidad: seed.unidad,
+    cantidad_sugerida: Math.max(0, Math.round(avgForecast(seed) * (seed.lead + HORIZON_DAYS) - stockFor(seed))),
+    creada_en: new Date().toISOString(),
+    estado: "Emitida",
+  };
+  demoOrders = [order, ...demoOrders];
+  return order;
 }
 
 export function mockForecast(id: string): ForecastResponse {

@@ -1,10 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { getAlerts, getCurrent, getForecast, getHistory, getMetrics, isDemo } from "@/lib/api";
+import { createOrder, getAlerts, getCurrent, getForecast, getHistory, getMetrics, getOrders, isDemo } from "@/lib/api";
 import { fmtDateLong, fmtDays, fmtInt } from "@/lib/format";
-import { STATUS, estadoPorDias } from "@/lib/status";
-import type { Alerta, ForecastResponse, HistoryResponse, InsumoActual, ModelMetrics } from "@/lib/types";
+import { STATUS } from "@/lib/status";
+import type { Alerta, ForecastResponse, HistoryResponse, InsumoActual, ModelMetrics, PurchaseOrder } from "@/lib/types";
 import { AlertsTable } from "./AlertsTable";
 import { ChartLegend, ForecastChart } from "./ForecastChart";
 import { Kpis } from "./Kpis";
@@ -71,6 +71,18 @@ export function Dashboard({ userLabel, onSignOut }: { userLabel?: string; onSign
   const current = overview.data?.current ?? null;
 
   const [selected, setSelected] = useState<string | null>(null);
+
+  const [orders, setOrders] = useState<Record<string, PurchaseOrder>>({});
+  useEffect(() => {
+    getOrders().then(
+      (list) => setOrders(Object.fromEntries(list.map((o) => [o.id_insumo, o]))),
+      () => undefined, // sin órdenes previas el botón sigue disponible
+    );
+  }, []);
+  async function placeOrder(id: string) {
+    const order = await createOrder(id);
+    setOrders((o) => ({ ...o, [id]: order }));
+  }
   // Por defecto se muestra el insumo que se agota primero.
   const activeId = selected ?? alerts?.[0]?.id_insumo ?? current?.[0]?.id_insumo ?? null;
 
@@ -88,7 +100,7 @@ export function Dashboard({ userLabel, onSignOut }: { userLabel?: string; onSign
 
   const item = current?.find((c) => c.id_insumo === activeId);
   const alert = alerts?.find((a) => a.id_insumo === activeId);
-  const estado = item ? (alert?.estado ?? estadoPorDias(item.dias_cobertura)) : null;
+  const estado = item?.estado ?? null;
 
   return (
     <div className="md:flex">
@@ -118,7 +130,7 @@ export function Dashboard({ userLabel, onSignOut }: { userLabel?: string; onSign
               {item && estado && (
                 <p className="mt-1 flex flex-wrap items-center gap-x-2 text-ink-2">
                   <span className={`num rounded-[2px] px-2 py-0.5 text-[13px] font-semibold ${STATUS[estado].bg} ${STATUS[estado].fg}`}>
-                    {estado}
+                    {STATUS[estado].label}
                   </span>
                   <span>
                     Stock <span className="num font-semibold text-ink">{fmtInt(item.stock_actual)}</span> {item.unidad}
@@ -137,7 +149,7 @@ export function Dashboard({ userLabel, onSignOut }: { userLabel?: string; onSign
           {current && (
             <div role="group" aria-label="Insumo" className="flex flex-wrap gap-2">
               {current.map((c) => {
-                const st = STATUS[alerts?.find((a) => a.id_insumo === c.id_insumo)?.estado ?? estadoPorDias(c.dias_cobertura)];
+                const st = STATUS[c.estado];
                 const on = c.id_insumo === activeId;
                 return (
                   <button
@@ -185,6 +197,8 @@ export function Dashboard({ userLabel, onSignOut }: { userLabel?: string; onSign
               alerts={alerts}
               loading={overview.loading}
               selected={activeId ?? ""}
+              orders={orders}
+              onOrder={placeOrder}
               onSelect={(id) => {
                 setSelected(id);
                 document.getElementById("pronostico")?.scrollIntoView({ behavior: "smooth", block: "start" });

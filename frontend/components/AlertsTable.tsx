@@ -4,25 +4,34 @@ import { useState } from "react";
 import { DayStrip } from "./DayStrip";
 import { fmtDateLong, fmtDays, fmtInt } from "@/lib/format";
 import { STATUS } from "@/lib/status";
-import type { Alerta } from "@/lib/types";
+import type { Alerta, PurchaseOrder } from "@/lib/types";
 
 interface Props {
   alerts: Alerta[] | null;
   loading: boolean;
   selected: string;
   onSelect: (id: string) => void;
+  orders: Record<string, PurchaseOrder>;
+  onOrder: (id: string) => Promise<void>;
 }
 
 const COLS =
   "md:grid md:grid-cols-[minmax(0,1.5fr)_minmax(0,0.9fr)_minmax(0,0.8fr)_minmax(0,1fr)_248px_168px] md:items-center md:gap-4";
 
-export function AlertsTable({ alerts, loading, selected, onSelect }: Props) {
-  // Las órdenes emitidas viven solo en pantalla hasta que exista el endpoint de órdenes.
-  const [ordered, setOrdered] = useState<Record<string, string>>({});
+export function AlertsTable({ alerts, loading, selected, onSelect, orders, onOrder }: Props) {
+  const [pending, setPending] = useState<string | null>(null);
+  const [failed, setFailed] = useState<Record<string, string>>({});
 
-  function emit(id: string) {
-    const hora = new Intl.DateTimeFormat("es-MX", { hour: "2-digit", minute: "2-digit" }).format(new Date());
-    setOrdered((o) => ({ ...o, [id]: hora }));
+  async function emit(id: string) {
+    setPending(id);
+    setFailed(({ [id]: _, ...rest }) => rest);
+    try {
+      await onOrder(id);
+    } catch (e) {
+      setFailed((f) => ({ ...f, [id]: e instanceof Error ? e.message : "No se pudo emitir la orden." }));
+    } finally {
+      setPending(null);
+    }
   }
 
   return (
@@ -53,7 +62,7 @@ export function AlertsTable({ alerts, loading, selected, onSelect }: Props) {
         {!loading &&
           alerts?.map((a) => {
             const st = STATUS[a.estado];
-            const done = ordered[a.id_insumo];
+            const done = orders[a.id_insumo];
             const isSel = a.id_insumo === selected;
             const dias = fmtDays(a.dias_restantes);
             return (
@@ -98,16 +107,29 @@ export function AlertsTable({ alerts, loading, selected, onSelect }: Props) {
                       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                         <path d="M3 8.5l3.2 3L13 4.5" stroke="currentColor" strokeWidth="2" strokeLinecap="square" />
                       </svg>
-                      Orden emitida {done}
+                      <span>
+                        Orden {done.id} emitida
+                        <span className="block text-[12px] font-normal text-ink-2">
+                          Sugerido: {fmtInt(done.cantidad_sugerida)} {done.unidad}
+                        </span>
+                      </span>
                     </p>
                   ) : (
-                    <button
-                      type="button"
-                      onClick={() => emit(a.id_insumo)}
-                      className="min-h-10 w-full rounded-[3px] bg-ink px-3 text-[13px] font-semibold text-white transition-colors hover:bg-forecast active:translate-y-px max-md:w-auto max-md:px-4"
-                    >
-                      Emitir orden de compra
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        disabled={pending === a.id_insumo}
+                        onClick={() => void emit(a.id_insumo)}
+                        className="min-h-10 w-full rounded-[3px] bg-ink px-3 text-[13px] font-semibold text-white transition-colors hover:bg-forecast active:translate-y-px disabled:opacity-60 max-md:w-auto max-md:px-4"
+                      >
+                        {pending === a.id_insumo ? "Emitiendo…" : "Emitir orden de compra"}
+                      </button>
+                      {failed[a.id_insumo] && (
+                        <p role="alert" className="mt-1 text-[12px] font-medium text-crit">
+                          {failed[a.id_insumo]}
+                        </p>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
