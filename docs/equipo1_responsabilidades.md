@@ -27,10 +27,11 @@ Persona B (datos)  ──►  Equipo de ML (modelo + métricas)  ──►  Pers
 **Carpetas:** `data/`, `sql/schema/`, `docs/data_contract.md`
 **Guía:** [`docs/data_spec.md`](data_spec.md)
 
-- [ ] `sql/schema/`: crear `historical_inventory` y `current_inventory` con las columnas exactas de la especificación.
-- [ ] `data/generate_data.py`: **3 años** de consumo diario (del `2023-11-01` al `2026-10-31`) para los 12 insumos, con la fórmula de la sección 3. Flag `--upload` para cargar a BigQuery con `WRITE_TRUNCATE`.
+- [x] `sql/schema/`: crear `historical_inventory` y `current_inventory` con las columnas exactas de la especificación.
+- [x] `sql/schema/99_validations.sql`: consultas de validación (ajustadas a 3 años y a la regla de alertas).
+- [ ] *(en proceso)* `data/generate_data.py`: **3 años** de consumo diario (del `2023-11-01` al `2026-10-31`) para los 12 insumos, con la fórmula de la sección 3. Flag `--upload` para cargar a BigQuery con `WRITE_TRUNCATE`.
 - [ ] Llenar `current_inventory` con los escenarios de la sección 5 (3 Críticos, 3 en Advertencia, 6 Estables).
-- [ ] Correr las validaciones de la sección 7 (`sql/schema/99_validations.sql`) y revisar los gráficos.
+- [ ] Correr `sql/schema/99_validations.sql` después de cargar los datos (todas las filas de la consulta 4 con `coincide = TRUE`) y revisar los gráficos.
 - [ ] **Avisar al equipo de ML apenas la primera versión esté cargada (meta: 60 a 90 min).** Es lo que lo desbloquea.
 - [ ] `docs/data_contract.md`: esquema y una fila de ejemplo de cada tabla y vista.
 - [ ] JSON mock con los `id_insumo` reales para el Equipo 2.
