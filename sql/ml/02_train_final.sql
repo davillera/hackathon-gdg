@@ -3,7 +3,9 @@
 -- backtest que mide la precisión como para el modelo que consume la Persona A.
 
 -- Configuración ganadora de 01_experiments.sql (actualizar si gana otra).
-DECLARE opciones STRING DEFAULT "holiday_region = 'CO'";
+-- Resultado con los datos de data/generate_data.py (semilla 42), MAPE semanal promedio:
+--   sin_limpieza 6.56 %  |  por_defecto 8.25 %  |  feriados_co 9.88 %
+DECLARE opciones STRING DEFAULT "clean_spikes_and_dips = FALSE, adjust_step_changes = FALSE";
 
 -- 1. Backtest de la configuración final (precisión que se muestra en el dashboard).
 CALL `supply_chain.sp_backtest`('final', opciones);

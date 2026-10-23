@@ -10,7 +10,7 @@ Gráficos para la presentación, generados a partir de las salidas de `sql/ml/`.
 | `requirements.txt` | Dependencias del notebook |
 | `figuras/` | PNG generados por el notebook (se crea al ejecutarlo) |
 
-Uso (requiere haber corrido `sql/ml/00` a `02` y credenciales con `gcloud auth application-default login`):
+Uso (requiere haber corrido `sql/ml/00` a `02` y haber iniciado sesión con `gcloud auth application-default login`; si esa credencial no existe, el notebook usa el token de `gcloud auth login`):
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r notebooks/requirements.txt
