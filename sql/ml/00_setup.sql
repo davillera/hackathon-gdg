@@ -1,37 +1,21 @@
--- Tablas de resultados y procedimiento de backtest del equipo de ML.
--- Correr una vez (o cada vez que cambie el procedimiento). Es idempotente.
-
-CREATE TABLE IF NOT EXISTS `supply_chain.ml_backtest_points` (
-  experimento  STRING,
-  id_insumo    STRING,
-  fecha        DATE,
-  real         FLOAT64,
-  pronostico   FLOAT64,
-  ejecutado_en TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS `supply_chain.ml_experiments` (
-  experimento   STRING,
-  opciones      STRING,
-  id_insumo     STRING,
-  mape_semanal  FLOAT64,  -- métrica oficial: MAPE (%) sobre bloques de 7 días
-  smape_diario  FLOAT64,  -- referencia: sMAPE diario de ML.EVALUATE
-  mae_diario    FLOAT64,  -- referencia: MAE diario de ML.EVALUATE
-  inicio_test   DATE,
-  fin_test      DATE,
-  ejecutado_en  TIMESTAMP
-);
+-- Procedimiento de backtest del equipo de ML. Correr una vez (o cada vez que cambie).
+--
+-- No usa INSERT ni DELETE: el modo gratuito de BigQuery (sandbox, sin facturación) no
+-- permite DML. Cada experimento escribe sus propias tablas y dos vistas las unen:
+--   ml_bt_points_<experimento>  →  vista ml_backtest_points (real vs. pronóstico por día)
+--   ml_bt_metrics_<experimento> →  vista ml_experiments     (métricas por insumo)
 
 -- Backtest de una configuración de ARIMA_PLUS.
 --
 -- 1. Entrena `supply_chain.eval_<experimento>` sin las últimas 4 semanas del histórico.
--- 2. Pronostica esas 4 semanas y guarda real vs. pronóstico en ml_backtest_points.
+-- 2. Pronostica esas 4 semanas y guarda real vs. pronóstico en ml_bt_points_<experimento>.
 -- 3. Calcula el MAPE semanal por insumo: se suman real y pronóstico en 4 bloques
 --    de 7 días (cada bloque tiene un día de cada tipo, así los domingos con consumo
 --    casi nulo no inflan el error) y se promedia el error porcentual de los bloques.
--- 4. Agrega las métricas diarias de ML.EVALUATE como referencia y guarda todo en ml_experiments.
+-- 4. Agrega las métricas diarias de ML.EVALUATE como referencia y guarda todo en
+--    ml_bt_metrics_<experimento>.
 --
--- p_experimento: nombre corto en minúsculas, se usa como sufijo del modelo.
+-- p_experimento: nombre corto en minúsculas, se usa como sufijo del modelo y las tablas.
 -- p_opciones:    opciones extra de ARIMA_PLUS, por ejemplo "holiday_region='CO'".
 CREATE OR REPLACE PROCEDURE `supply_chain.sp_backtest`(p_experimento STRING, p_opciones STRING)
 BEGIN
@@ -59,30 +43,28 @@ BEGIN
     WHERE fecha < %T
   """, p_experimento, dias_test, p_opciones, inicio_test);
 
-  DELETE FROM `supply_chain.ml_backtest_points` WHERE experimento = p_experimento;
-  DELETE FROM `supply_chain.ml_experiments` WHERE experimento = p_experimento;
-
   EXECUTE IMMEDIATE FORMAT("""
-    INSERT INTO `supply_chain.ml_backtest_points`
-      (experimento, id_insumo, fecha, real, pronostico, ejecutado_en)
-    SELECT @experimento, h.id_insumo, h.fecha, h.cantidad_consumida,
-           GREATEST(0, f.forecast_value), CURRENT_TIMESTAMP()
+    CREATE OR REPLACE TABLE `supply_chain.ml_bt_points_%s` AS
+    SELECT %T AS experimento,
+           h.id_insumo,
+           h.fecha,
+           h.cantidad_consumida AS real,
+           GREATEST(0, f.forecast_value) AS pronostico,
+           CURRENT_TIMESTAMP() AS ejecutado_en
     FROM ML.FORECAST(MODEL `supply_chain.eval_%s`, STRUCT(%d AS horizon)) AS f
     JOIN `supply_chain.historical_inventory` AS h
       ON h.id_insumo = f.id_insumo AND h.fecha = DATE(f.forecast_timestamp)
-    WHERE h.fecha BETWEEN @inicio_test AND @fin_test
-  """, p_experimento, dias_test)
-  USING p_experimento AS experimento, inicio_test AS inicio_test, fin_test AS fin_test;
+    WHERE h.fecha BETWEEN %T AND %T
+  """, p_experimento, p_experimento, p_experimento, dias_test, inicio_test, fin_test);
 
   EXECUTE IMMEDIATE FORMAT("""
-    INSERT INTO `supply_chain.ml_experiments`
+    CREATE OR REPLACE TABLE `supply_chain.ml_bt_metrics_%s` AS
     WITH bloques AS (
       SELECT id_insumo,
-             DIV(DATE_DIFF(fecha, @inicio_test, DAY), 7) AS bloque,
+             DIV(DATE_DIFF(fecha, %T, DAY), 7) AS bloque,
              SUM(real) AS real,
              SUM(pronostico) AS pronostico
-      FROM `supply_chain.ml_backtest_points`
-      WHERE experimento = @experimento
+      FROM `supply_chain.ml_bt_points_%s`
       GROUP BY id_insumo, bloque
     ),
     semanal AS (
@@ -99,14 +81,27 @@ BEGIN
         MODEL `supply_chain.eval_%s`,
         (SELECT fecha, id_insumo, cantidad_consumida
          FROM `supply_chain.historical_inventory`
-         WHERE fecha BETWEEN @inicio_test AND @fin_test),
+         WHERE fecha BETWEEN %T AND %T),
         STRUCT(TRUE AS perform_aggregation, %d AS horizon))
     )
-    SELECT @experimento, @opciones, s.id_insumo, s.mape_semanal,
-           d.smape_diario, d.mae_diario, @inicio_test, @fin_test, CURRENT_TIMESTAMP()
+    SELECT %T AS experimento,
+           %T AS opciones,
+           s.id_insumo,
+           s.mape_semanal,   -- métrica oficial: MAPE (%%) sobre bloques de 7 días
+           d.smape_diario,   -- referencia: sMAPE diario de ML.EVALUATE
+           d.mae_diario,     -- referencia: MAE diario de ML.EVALUATE
+           %T AS inicio_test,
+           %T AS fin_test,
+           CURRENT_TIMESTAMP() AS ejecutado_en
     FROM semanal AS s
     LEFT JOIN diario AS d USING (id_insumo)
-  """, p_experimento, dias_test)
-  USING p_experimento AS experimento, p_opciones AS opciones,
-        inicio_test AS inicio_test, fin_test AS fin_test;
+  """, p_experimento, inicio_test, p_experimento, p_experimento, inicio_test, fin_test, dias_test,
+       p_experimento, p_opciones, inicio_test, fin_test);
+
+  -- Vistas que unen todos los experimentos (se recrean para incluir las tablas nuevas).
+  CREATE OR REPLACE VIEW `supply_chain.ml_backtest_points` AS
+  SELECT * FROM `supply_chain.ml_bt_points_*`;
+
+  CREATE OR REPLACE VIEW `supply_chain.ml_experiments` AS
+  SELECT * FROM `supply_chain.ml_bt_metrics_*`;
 END;

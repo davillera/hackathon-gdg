@@ -1,36 +1,43 @@
--- Insumos que se agotan pronto. Solo Crítico (<= 7 días) y Advertencia (<= 14 días).
---   dias_restantes:    primer día n (1 = día siguiente a la fecha de corte) en que el consumo
---                      pronosticado acumulado supera el stock. Si no pasa en 30 días no hay fila (Estable).
---   fecha_agotamiento: fecha de corte + dias_restantes. La fecha de corte es el último día del histórico.
--- Es la misma regla que frontend/lib/status.ts y backend/app/rules.py.
+-- Insumos en riesgo de agotarse (/api/alerts). Solo trae Crítico y Advertencia.
+-- Requiere 01_forecast_30d.sql.
+--
+-- fecha_agotamiento: primer día del pronóstico en que el consumo acumulado supera el stock.
+-- dias_restantes:    días desde fecha_corte hasta fecha_agotamiento (1 = día siguiente al corte).
+-- estado:            Crítico si dias_restantes <= 7, Advertencia si <= 14 (igual que frontend/lib/status.ts).
+-- Un insumo que no se agota en los 30 días del pronóstico es Estable y no aparece aquí.
+
 CREATE OR REPLACE VIEW `supply_chain.v_alerts` AS
-WITH corte AS (
-  SELECT MAX(fecha) AS fecha_corte FROM `supply_chain.historical_inventory`
-),
-acumulado AS (
-  SELECT
-    f.id_insumo,
-    DATE_DIFF(f.date, corte.fecha_corte, DAY) AS dia,
-    SUM(f.predicted_consumption) OVER (PARTITION BY f.id_insumo ORDER BY f.date) AS consumo_acumulado
-  FROM `supply_chain.forecast_30d` AS f
-  CROSS JOIN corte
+WITH acumulado AS (
+  SELECT id_insumo,
+         date,
+         SUM(predicted_consumption) OVER (PARTITION BY id_insumo ORDER BY date) AS consumo_acumulado
+  FROM `supply_chain.forecast_30d`
 ),
 agotamiento AS (
-  SELECT a.id_insumo, MIN(a.dia) AS dias_restantes
-  FROM acumulado AS a
-  JOIN `supply_chain.current_inventory` AS c USING (id_insumo)
-  WHERE a.consumo_acumulado > c.stock_actual
-  GROUP BY a.id_insumo
+  SELECT c.id_insumo,
+         c.nombre,
+         c.unidad,
+         c.stock_actual,
+         corte.fecha_corte,
+         MIN(IF(a.consumo_acumulado > c.stock_actual, a.date, NULL)) AS fecha_agotamiento
+  FROM `supply_chain.current_inventory` AS c
+  JOIN acumulado AS a USING (id_insumo)
+  -- current_inventory no tiene fecha_corte: es el último día del histórico.
+  CROSS JOIN (SELECT MAX(fecha) AS fecha_corte FROM `supply_chain.historical_inventory`) AS corte
+  GROUP BY c.id_insumo, c.nombre, c.unidad, c.stock_actual, corte.fecha_corte
+),
+clasificado AS (
+  SELECT *,
+         DATE_DIFF(fecha_agotamiento, fecha_corte, DAY) AS dias_restantes
+  FROM agotamiento
+  WHERE fecha_agotamiento IS NOT NULL
 )
-SELECT
-  c.id_insumo,
-  c.nombre,
-  c.unidad,
-  IF(g.dias_restantes <= 7, 'Crítico', 'Advertencia') AS estado,
-  c.stock_actual,
-  g.dias_restantes,
-  DATE_ADD((SELECT fecha_corte FROM corte), INTERVAL g.dias_restantes DAY) AS fecha_agotamiento
-FROM agotamiento AS g
-JOIN `supply_chain.current_inventory` AS c USING (id_insumo)
-WHERE g.dias_restantes <= 14
-ORDER BY fecha_agotamiento, c.id_insumo;
+SELECT id_insumo,
+       nombre,
+       unidad,
+       IF(dias_restantes <= 7, 'Crítico', 'Advertencia') AS estado,
+       stock_actual,
+       dias_restantes,
+       fecha_agotamiento
+FROM clasificado
+WHERE dias_restantes <= 14;

@@ -1,0 +1,10 @@
+[
+  { "id_insumo": "ACERO_A36", "nombre": "Acero A36", "stock_actual": 3400.0, "punto_reorden": 11900.0, "estado": "Crítico" },
+  { "id_insumo": "DISCO_CORTE_7", "nombre": "Disco de corte 7\"", "stock_actual": 210.0, "punto_reorden": 840.0, "estado": "Crítico" },
+  { "id_insumo": "GAS_ARGON", "nombre": "Gas argón", "stock_actual": 125.0, "punto_reorden": 425.0, "estado": "Crítico" },
+  { "id_insumo": "ELECTRODO_6013", "nombre": "Electrodo 6013", "stock_actual": 495.0, "punto_reorden": 630.0, "estado": "Advertencia" },
+  { "id_insumo": "TORNILLO_M10", "nombre": "Tornillo M10", "stock_actual": 4000.0, "punto_reorden": 4800.0, "estado": "Advertencia" },
+  { "id_insumo": "PINTURA_ANTICORROSIVA", "nombre": "Pintura anticorrosiva", "stock_actual": 216.0, "punto_reorden": 252.0, "estado": "Advertencia" },
+  { "id_insumo": "ELECTRODO_7018", "nombre": "Electrodo 7018", "stock_actual": 900.0, "punto_reorden": 420.0, "estado": "Estable" },
+  { "id_insumo": "ACERO_INOX_304", "nombre": "Acero Inox 304", "stock_actual": 5400.0, "punto_reorden": 2040.0, "estado": "Estable" }
+]
