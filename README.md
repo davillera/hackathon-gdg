@@ -28,7 +28,7 @@ BigQuery (ARIMA_PLUS)  →  FastAPI (Cloud Run)  →  Next.js (Firebase Hosting)
 | `notebooks/` | Equipo de ML | Exploración y gráficos para la presentación |
 | `docs/` | Compartido | `data_spec.md` (especificación de datos) y `data_contract.md` (contrato de tablas) |
 
-Cada carpeta tiene un `README.md` con el detalle de sus archivos.
+Cada carpeta tiene un `README.md` con el detalle de sus archivos. Las tareas de cada persona están en [`docs/equipo1_responsabilidades.md`](docs/equipo1_responsabilidades.md).
 
 ## División en dos equipos
 

@@ -8,7 +8,7 @@ Generación de los datos sintéticos que alimentan BigQuery. La especificación 
 |---|---|
 | `generate_data.py` | Genera el histórico y el stock actual. Con `--upload` los carga en BigQuery (`WRITE_TRUNCATE`). |
 | `requirements.txt` | `numpy`, `pandas`, `holidays`, `google-cloud-bigquery`, `pyarrow`, `matplotlib` |
-| `historical_inventory.csv` | Salida: consumo diario por insumo (unas 8 700 filas) |
+| `historical_inventory.csv` | Salida: consumo diario por insumo, 3 años (unas 13 100 filas) |
 | `current_inventory.csv` | Salida: stock actual por insumo con los escenarios de demo |
 
 Uso:

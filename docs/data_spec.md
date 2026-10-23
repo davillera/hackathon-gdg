@@ -8,13 +8,15 @@ El objetivo es que el histórico tenga patrones que `ARIMA_PLUS` pueda detectar 
 
 | Parámetro | Valor |
 |---|---|
-| Rango de fechas | `2024-11-01` a `2026-10-31` (730 días, ambos incluidos) |
+| Rango de fechas | `2023-11-01` a `2026-10-31` (1 096 días, ambos incluidos) |
 | Frecuencia | Diaria, una fila por (`fecha`, `id_insumo`) |
 | Semilla | `np.random.default_rng(42)` |
 | País de feriados | `CO` (debe coincidir con `holiday_region` del modelo) |
 | Días faltantes | Eliminar al azar el 0.5 % de las filas (ARIMA_PLUS interpola huecos; así lo probamos) |
 
 El pronóstico de 30 días empezará el `2026-11-01`, igual que el ejemplo del contrato de la API.
+
+Son 3 años y no 2 a propósito: `ARIMA_PLUS` necesita al menos dos ciclos completos para detectar la estacionalidad anual, y el backtest entrena sin las últimas 4 semanas. Con exactamente 2 años, el modelo de evaluación quedaría por debajo de ese mínimo.
 
 ## 2. Catálogo de insumos
 
@@ -54,7 +56,7 @@ Después: `max(0, consumo)` y redondeo (a entero si la columna "Entero" es "sí"
 
 ### Componentes
 
-- **Tendencia (lineal):** `1 + g_i × t`, donde `t` = años transcurridos desde `2024-11-01` y `g_i` = tendencia anual.
+- **Tendencia (lineal):** `1 + g_i × t`, donde `t` = años transcurridos desde `2023-11-01` y `g_i` = tendencia anual.
 - **Semanal:** multiplicador según el día de la semana.
 
   | Lun | Mar | Mié | Jue | Vie | Sáb | Dom |
@@ -64,13 +66,13 @@ Después: `max(0, consumo)` y redondeo (a entero si la columna "Entero" es "sí"
 - **Anual:** `1 + A_i × cos(2π × (día_del_año − 270) / 365.25)`. El pico cae a finales de septiembre (proyectos del 2.º semestre) y el valle a finales de marzo.
 - **Eventos** (no se multiplican entre sí; se aplica el menor):
   - Cierre de fin de año, del 22 de diciembre al 2 de enero: × 0.25.
-  - Semana Santa (`2025-04-13` a `2025-04-20` y `2026-03-29` a `2026-04-05`): × 0.50.
+  - Semana Santa (`2024-03-24` a `2024-03-31`, `2025-04-13` a `2025-04-20` y `2026-03-29` a `2026-04-05`): × 0.50.
   - Feriados nacionales de `CO` (paquete `holidays`, `holidays.country_holidays("CO")`): × 0.10.
 - **Ruido:** multiplicativo, `rng.gamma(shape=1/CV², scale=CV²)`. Tiene media 1 y el coeficiente de variación de la tabla.
 - **Picos:** con probabilidad `p_i` por día, multiplicar por `rng.uniform(2, 4)`. Simulan pedidos grandes. Nunca en domingo ni en evento.
 - **Cambio de nivel:** solo en `ALAMBRE_MIG_ER70S6`, × 1.30 desde `2026-03-01`. Sirve para mostrar `adjust_step_changes`.
 
-**Importante para el backtest:** los últimos 30 días (octubre de 2026) siguen el mismo proceso que el resto, sin cambios de nivel ni eventos nuevos. Si no, la evaluación queda sesgada.
+**Importante para el backtest:** las últimas 4 semanas (del `2026-10-04` al `2026-10-31`) siguen el mismo proceso que el resto, sin cambios de nivel ni eventos nuevos. Si no, la evaluación queda sesgada.
 
 ## 4. Tabla `historical_inventory`
 
@@ -80,7 +82,7 @@ Después: `max(0, consumo)` y redondeo (a entero si la columna "Entero" es "sí"
 | `id_insumo` | `STRING` |
 | `cantidad_consumida` | `FLOAT64` (también para los insumos enteros) |
 
-Unas 8 700 filas (12 × 730 − 0.5 %). Se guarda también en `data/historical_inventory.csv`.
+Unas 13 100 filas (12 × 1 096 − 0.5 %). Se guarda también en `data/historical_inventory.csv`.
 
 ## 5. Tabla `current_inventory`
 
@@ -106,17 +108,19 @@ Unas 8 700 filas (12 × 730 − 0.5 %). Se guarda también en `data/historical_i
 | `ELECTRODO_6013` | 11 | 7 | Advertencia |
 | `TORNILLO_M10` | 10 | 5 | Advertencia |
 | `PINTURA_ANTICORROSIVA` | 12 | 7 | Advertencia |
-| `ELECTRODO_7018` | 30 | 7 | OK |
-| `ACERO_INOX_304` | 45 | 10 | OK |
-| `ALAMBRE_MIG_ER70S6` | 25 | 7 | OK |
-| `DISCO_DESBASTE_7` | 40 | 5 | OK |
-| `GAS_CO2` | 35 | 10 | OK |
-| `GUANTES_SOLDADOR` | 60 | 5 | OK |
+| `ELECTRODO_7018` | 30 | 7 | Estable |
+| `ACERO_INOX_304` | 45 | 10 | Estable |
+| `ALAMBRE_MIG_ER70S6` | 25 | 7 | Estable |
+| `DISCO_DESBASTE_7` | 40 | 5 | Estable |
+| `GAS_CO2` | 35 | 10 | Estable |
+| `GUANTES_SOLDADOR` | 60 | 5 | Estable |
 
-Regla de alerta de referencia (la confirma el equipo de ML después del backtest):
-- **Crítico:** días hasta agotarse ≤ `lead_time_dias`, o stock < consumo pronosticado de 7 días.
-- **Advertencia:** días hasta agotarse ≤ `lead_time_dias` + 7.
-- **OK:** el resto.
+Regla de alerta (la misma que usa el frontend en `frontend/lib/status.ts`):
+- **Crítico:** se agota en 7 días o menos.
+- **Advertencia:** se agota en 8 a 14 días.
+- **Estable:** el resto.
+
+"Se agota" = primer día del pronóstico en que el consumo pronosticado acumulado desde el `2026-11-01` supera `stock_actual`. Los escenarios de arriba están elegidos para caer en su estado aun si el pronóstico de noviembre es un 10 % menor que el promedio de octubre (la estacionalidad anual baja después de septiembre).
 
 ## 6. Carga a BigQuery
 
